@@ -1,0 +1,87 @@
+name: SaleArmor
+options:
+  bundleIdPrefix: com.natalieleong
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    # Read from the Apple Development certificate's OU field, not typed from memory.
+    DEVELOPMENT_TEAM: "DC4T539CW7"
+    TARGETED_DEVICE_FAMILY: "1"   # iPhone. Shielding is a phone habit, not an iPad one.
+
+targets:
+  SaleArmor:
+    type: application
+    platform: iOS
+    # Shared/ is compiled into BOTH targets. The extension is a separate process and cannot see
+    # the app's types, but it must read the same armed window and clear the same shield store.
+    sources: [SaleArmor, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    entitlements:
+      path: SaleArmor/SaleArmor.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.natalieleong.salearmor
+    info:
+      path: SaleArmor/Info.plist
+      properties:
+        CFBundleDisplayName: Sale Armor
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    dependencies:
+      - target: SaleArmorMonitor
+        embed: true
+
+  # The extension is what actually raises and drops the shield. The app only schedules it, so a
+  # window still opens and closes correctly when the app is never launched that day.
+  SaleArmorMonitor:
+    type: app-extension
+    platform: iOS
+    sources: [SaleArmorMonitor, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor.monitor
+    entitlements:
+      path: SaleArmorMonitor/SaleArmorMonitor.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.natalieleong.salearmor
+    info:
+      path: SaleArmorMonitor/Info.plist
+      properties:
+        CFBundleDisplayName: Sale Armor Monitor
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldMonitor
+
+  SaleArmorTests:
+    type: bundle.unit-test
+    platform: iOS
+    # Shared/ only. The schedule and wishlist logic is deliberately free of UI and of
+    # FamilyControls calls, so it can be tested without a device or a Screen Time grant.
+    sources: [SaleArmorTests, Shared]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor.tests
+
+schemes:
+  SaleArmor:
+    build:
+      targets:
+        SaleArmor: all
+        SaleArmorTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SaleArmorTests
