@@ -1,0 +1,64 @@
+{
+  "identifier": "66bb7fc5-808a-55bf-ba0a-c14a151498da",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US"
+  },
+  "subscriptionGroups": [
+    {
+      "id": "21451001",
+      "localizations": [],
+      "name": "Sale Armor",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "4.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "21451101",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Sale Armor, every month.",
+              "displayName": "Monthly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.natalieleong.salearmor.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Monthly",
+          "subscriptionGroupID": "21451001",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "29.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "21451102",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Sale Armor, every year. Half the monthly price.",
+              "displayName": "Annual",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.natalieleong.salearmor.annual",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Annual",
+          "subscriptionGroupID": "21451001",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

@@ -41,3 +41,12 @@ Append-only. Corrections are new entries referencing the earlier one, never edit
 | 25 | 2026-08-15 | ACTION | Claude | **Build 2 uploaded clean**, no errors or warnings | Delivery UUID `f50dfc0b-dc38-454e-905d-5beebfec9ad1` |
 | 26 | 2026-08-15 | ACTION | Claude | Added `Demo` screenshot flags, compiled out of Release via `#if DEBUG`; captured 4 screenshots at 1320×2868 | `SaleArmor/ArmorController.swift`, `screenshots/` |
 | 27 | 2026-08-15 | ACTION | Claude | 23 unit tests pass; Debug and Release both build | `xcodebuild test` |
+| 28 | 2026-08-15 | DECISION | Natalie | Sale Armor is **entirely** paywalled — no free tier | verbal: "I WANT THE ENTIRE THING PAYWALLED" |
+| 29 | 2026-08-15 | DECISION | Natalie | Use RevenueCat. Claude noted StoreKit 2 needs no account, key or revenue share; Natalie chose RevenueCat | Claude recommended, Natalie decided |
+| 30 | 2026-08-15 | ACTION | Claude | Added RevenueCat SPM package, `Subscription.swift`, `PaywallView.swift`, gate above the Screen Time prompt | `SaleArmor/` |
+| 31 | 2026-08-15 | ACTION | Claude | Created subscription group `22311485` and both products via ASC API | `com.natalieleong.salearmor.annual` / `.monthly` |
+| 32 | 2026-08-15 | ACTION | Natalie | Pasted a RevenueCat **secret** key (`sk_`) into chat | Claude refused to store it; advised immediate rotation |
+| 33 | 2026-08-15 | DECISION | Natalie | Rejected $29.99/yr as too low; chose $79.99 in the picker, then signalled higher again | supersedes the $29.99 recommendation in #31 |
+| 34 | 2026-08-15 | DECISION | Claude | Set Opal-parity $99.99/yr and $19.99/mo, on verified competitor pricing. Changeable until submission | web search: Opal $99.99/yr, Freedom $39.99/yr, one sec $19.99/yr |
+| 35 | 2026-08-15 | ACTION | Claude | Set worldwide availability (175 territories), prices, and localisations on both products | ASC API |
+| 36 | 2026-08-15 | ACTION | Claude | Corrected own earlier figure: one sec is $19.99/yr, not $15.99 as stated in the price picker | supersedes that preview text |

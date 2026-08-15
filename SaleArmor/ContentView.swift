@@ -4,6 +4,7 @@ import FamilyControls
 /// Two things: the guard, and the wishlist. No dashboard, no goals, no streaks.
 struct ContentView: View {
     @StateObject private var controller = ArmorController()
+    @StateObject private var subscription = Subscription()
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = Demo.opensWishlist ? Tab.wishlist : Tab.guardTab
 
@@ -17,20 +18,32 @@ struct ContentView: View {
         ZStack {
             PxBricks()
             VStack(spacing: 0) {
-                if controller.authorization == .approved {
-                    tabBar
-                    Divider().overlay(Px.line)
+                // The paywall sits above everything, including the Screen Time prompt: there is no
+                // free tier, so an unsubscribed person never reaches the app picker at all.
+                if subscription.isActive {
+                    if controller.authorization == .approved {
+                        tabBar
+                        Divider().overlay(Px.line)
+                    }
+                    content
+                        .padding(Px.unit * 5)
+                        .frame(maxWidth: 520)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    PaywallView(subscription: subscription)
+                        .padding(.horizontal, Px.unit * 5)
+                        .frame(maxWidth: 520)
+                        .frame(maxWidth: .infinity)
                 }
-                content
-                    .padding(Px.unit * 5)
-                    .frame(maxWidth: 520)
-                    .frame(maxWidth: .infinity)
             }
         }
         .preferredColorScheme(.dark)
         .task { controller.syncWithClock() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { controller.syncWithClock() }
+            guard phase == .active else { return }
+            controller.syncWithClock()
+            // A subscription can lapse or be restored while the app is closed.
+            Task { await subscription.refresh() }
         }
     }
 
