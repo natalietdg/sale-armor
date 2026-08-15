@@ -16,13 +16,19 @@ final class Subscription: ObservableObject {
     /// Unlocked. Starts from the cached value so a returning subscriber is not made to wait for
     /// the network on every cold launch.
     @Published private(set) var isActive: Bool
-    @Published private(set) var offering: Offering?
+    /// Ordered cheapest first and already formatted. The order is enforced here rather than
+    /// inherited from the offering, because position on the paywall is doing real work.
+    @Published private(set) var plans: [Plan] = []
     @Published private(set) var isWorking = false
     @Published var problem: String?
 
-    /// The entitlement configured in RevenueCat. One entitlement, because there is one thing to
-    /// buy — every product grants the same access, they only differ in how long it lasts.
-    private static let entitlement = "pro"
+    /// The entitlement configured in RevenueCat, matched by its **lookup key** — not its display
+    /// name, though here they happen to be the same string. One entitlement, because there is one
+    /// thing to buy: every product grants the same access and they differ only in how long it lasts.
+    ///
+    /// A typo here does not fail loudly. It reads as "this customer has not paid", so a real
+    /// purchase would go through and the paywall would still be there afterwards.
+    private static let entitlement = "Sale Armor Pro"
 
     /// Cached across launches so the app opens unlocked instead of flashing the paywall while
     /// RevenueCat is asked. `UserDefaults` is the right store here: losing it costs one refresh,
@@ -68,16 +74,60 @@ final class Subscription: ObservableObject {
     private func loadOffering() async {
         guard Purchases.isConfigured else { return }
         do {
-            offering = try await Purchases.shared.offerings().current
+            let packages = try await Purchases.shared.offerings().current?.availablePackages ?? []
+            let rank: [PackageType: Int] = [.weekly: 0, .monthly: 1, .annual: 2, .lifetime: 3]
+            plans = packages
+                .sorted { rank[$0.packageType, default: 9] < rank[$1.packageType, default: 9] }
+                .map(Self.plan(from:))
         } catch {
             problem = "Couldn't load the prices. Check your connection."
         }
     }
 
+    /// Turns a package into the four strings the paywall draws.
+    ///
+    /// The per-unit line is the honest version of a price comparison: the same money at a scale a
+    /// person can picture, computed from the real price rather than written into the copy, so it
+    /// cannot drift out of step with the store or be wrong in another currency.
+    private static func plan(from package: Package) -> Plan {
+        let product = package.storeProduct
+        let price = product.price as NSDecimalNumber
+
+        func formatted(_ amount: Double) -> String {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .currency
+            formatter.currencyCode = product.currencyCode ?? "USD"
+            return formatter.string(from: NSNumber(value: amount)) ?? ""
+        }
+
+        switch package.packageType {
+        case .weekly:
+            return Plan(id: "weekly", term: "Every week", price: product.localizedPriceString,
+                        unit: "\(formatted(price.doubleValue / 7)) a day",
+                        badge: "POPULAR", renews: true, package: package)
+        case .monthly:
+            return Plan(id: "monthly", term: "Every month", price: product.localizedPriceString,
+                        unit: "\(formatted(price.doubleValue / 4.33)) a week",
+                        badge: nil, renews: true, package: package)
+        case .annual:
+            return Plan(id: "annual", term: "Every year", price: product.localizedPriceString,
+                        unit: "\(formatted(price.doubleValue / 12)) a month",
+                        badge: "BEST VALUE", renews: true, package: package)
+        case .lifetime:
+            return Plan(id: "lifetime", term: "Once, forever", price: product.localizedPriceString,
+                        unit: "No renewal, ever",
+                        badge: nil, renews: false, package: package)
+        default:
+            return Plan(id: package.identifier, term: product.localizedTitle,
+                        price: product.localizedPriceString, unit: "",
+                        badge: nil, renews: true, package: package)
+        }
+    }
+
     // MARK: buying
 
-    func buy(_ package: Package) async {
-        guard Purchases.isConfigured else { return }
+    func buy(_ plan: Plan) async {
+        guard let package = plan.package, Purchases.isConfigured else { return }
         isWorking = true
         defer { isWorking = false }
         do {
