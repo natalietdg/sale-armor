@@ -12,7 +12,27 @@ settings:
     SWIFT_VERSION: "5.10"
     # Read from the Apple Development certificate's OU field, not typed from memory.
     DEVELOPMENT_TEAM: "DC4T539CW7"
-    TARGETED_DEVICE_FAMILY: "1"   # iPhone. Shielding is a phone habit, not an iPad one.
+
+# SIGNING — why each target repeats this instead of inheriting it
+#
+# XcodeGen writes its own defaults at *target* level for anything a target leaves unset, and a
+# target-level default beats a project-level setting. Two of those defaults broke delivery:
+#
+#   CODE_SIGN_IDENTITY = "iPhone Developer"   pinned every build, archives included, to a
+#       development profile. Development profiles need a registered device, so archiving died
+#       with "your team has no devices" no matter how healthy the account was.
+#   TARGETED_DEVICE_FAMILY = "1,2"            claimed iPad support, and an iPad-capable app that
+#       declares portrait-only is rejected at upload for not supporting multitasking.
+#
+# Release signs manually against explicit App Store profiles ("SaleArmor AppStore" and
+# "SaleArmorMonitor AppStore"), created through the App Store Connect API because Xcode-managed
+# profiles are rejected under manual signing. Automatic signing kept resolving a *development*
+# profile even when
+# archiving and then refused the distribution identity as "conflicting", and blanking the identity
+# to escape that left the archive unsigned — an unsigned archive exports with only the profile's
+# minimum entitlements, silently dropping family-controls and the App Group, so the shield never
+# raises. Naming the Store profile removes the guesswork. Debug stays automatic so running on a
+# device still just works.
 
 targets:
   SaleArmor:
@@ -24,12 +44,16 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor
-        # Blank, not "iPhone Developer": XcodeGen's per-target default forced every build —
-        # archives included — to ask Apple for a *development* profile, which needs a
-        # registered device. Empty lets automatic signing pick distribution when archiving.
-        CODE_SIGN_IDENTITY: ""
-        CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"   # iPhone. Shielding is a phone habit, not an iPad one.
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "SaleArmor AppStore"
     entitlements:
       path: SaleArmor/SaleArmor.entitlements
       properties:
@@ -40,6 +64,9 @@ targets:
       path: SaleArmor/Info.plist
       properties:
         CFBundleDisplayName: Sale Armor
+        CFBundleShortVersionString: "1.0"
+        # Build 1 was uploaded and then found to be missing its entitlements, so it is burnt.
+        CFBundleVersion: "2"
         # Pixelify Sans, SIL Open Font Licence — free for commercial use. Chosen over Press Start
         # 2P because the app has real sentences in it and Press Start is unreadable below ~14pt.
         UIAppFonts:
@@ -61,11 +88,15 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor.monitor
-        # Blank, not "iPhone Developer": XcodeGen's per-target default forced every build —
-        # archives included — to ask Apple for a *development* profile, which needs a
-        # registered device. Empty lets automatic signing pick distribution when archiving.
-        CODE_SIGN_IDENTITY: ""
-        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "SaleArmorMonitor AppStore"
     entitlements:
       path: SaleArmorMonitor/SaleArmorMonitor.entitlements
       properties:
@@ -76,6 +107,9 @@ targets:
       path: SaleArmorMonitor/Info.plist
       properties:
         CFBundleDisplayName: Sale Armor Monitor
+        CFBundleShortVersionString: "1.0"
+        # Must match the host app exactly or the upload is rejected.
+        CFBundleVersion: "2"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldMonitor
@@ -90,11 +124,10 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: "YES"
         PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor.tests
-        # Blank, not "iPhone Developer": XcodeGen's per-target default forced every build —
-        # archives included — to ask Apple for a *development* profile, which needs a
-        # registered device. Empty lets automatic signing pick distribution when archiving.
-        CODE_SIGN_IDENTITY: ""
+        TARGETED_DEVICE_FAMILY: "1"
+        # Tests never ship, so they never need a distribution identity.
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
 
 schemes:
   SaleArmor:

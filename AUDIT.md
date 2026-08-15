@@ -24,3 +24,15 @@ Append-only. Corrections are new entries referencing the earlier one, never edit
 
 - Upload to App Store Connect — blocked on the app record existing there. Natalie's action.
 - No git remote. All commits local.
+
+## Session continued — 2026-08-15, upload attempt
+
+| # | Date | Type | Actor | What | Evidence / file |
+|---|---|---|---|---|---|
+| 16 | 2026-08-15 | ACTION | Natalie | Generated App Store Connect API key `KG84U74QGJ` | appstoreconnect.apple.com → Integrations |
+| 17 | 2026-08-15 | ACTION | Claude | Moved key to `~/.appstoreconnect/private_keys/`, chmod 600 | filesystem |
+| 18 | 2026-08-15 | ACTION | Claude | Wrote a minimal ASC API client; ES256 JWT signed via openssl since pyjwt/cryptography absent | `scratchpad/asc.py` |
+| 19 | 2026-08-15 | ACTION | Claude | Confirmed via API: **0 app records**, and both Sale Armor bundle IDs registered (`H4WK3A9838`, `KQHGK74HYN`) — confirms entry #12, the account was never the problem | `GET /v1/apps`, `GET /v1/bundleIds` |
+| 20 | 2026-08-15 | ACTION | Claude | Attempted `POST /v1/apps` → **403**, Apple does not permit app-record creation via API | API response `c29fd24d` |
+| 21 | 2026-08-15 | DECISION | Claude | App record must be created by Natalie in the web UI; upload automatable after that | — |
+| 22 | 2026-08-15 | ACTION | Claude | Noted `com.natalieleong.baoyitalk` is not a registered bundle ID — BaoYiTalk cannot archive yet | `GET /v1/bundleIds`, total 2 |
