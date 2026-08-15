@@ -36,3 +36,8 @@ Append-only. Corrections are new entries referencing the earlier one, never edit
 | 20 | 2026-08-15 | ACTION | Claude | Attempted `POST /v1/apps` → **403**, Apple does not permit app-record creation via API | API response `c29fd24d` |
 | 21 | 2026-08-15 | DECISION | Claude | App record must be created by Natalie in the web UI; upload automatable after that | — |
 | 22 | 2026-08-15 | ACTION | Claude | Noted `com.natalieleong.baoyitalk` is not a registered bundle ID — BaoYiTalk cannot archive yet | `GET /v1/bundleIds`, total 2 |
+| 23 | 2026-08-15 | ACTION | Claude | Created explicit App Store profiles via `POST /v1/profiles` after Xcode-managed profiles proved unusable under manual signing | `SaleArmor AppStore`, `SaleArmorMonitor AppStore` |
+| 24 | 2026-08-15 | ACTION | Claude | Verified `family-controls` + App Group present in both signed binaries **before** uploading | `codesign -d --entitlements` on the ipa |
+| 25 | 2026-08-15 | ACTION | Claude | **Build 2 uploaded clean**, no errors or warnings | Delivery UUID `f50dfc0b-dc38-454e-905d-5beebfec9ad1` |
+| 26 | 2026-08-15 | ACTION | Claude | Added `Demo` screenshot flags, compiled out of Release via `#if DEBUG`; captured 4 screenshots at 1320×2868 | `SaleArmor/ArmorController.swift`, `screenshots/` |
+| 27 | 2026-08-15 | ACTION | Claude | 23 unit tests pass; Debug and Release both build | `xcodebuild test` |

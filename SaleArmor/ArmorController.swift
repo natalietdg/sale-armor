@@ -3,6 +3,27 @@ import SwiftUI
 import FamilyControls
 import ManagedSettings
 
+/// Screenshot support, and nothing else.
+///
+/// A simulator has no Screen Time to grant and `FamilyActivityPicker` returns nothing there, so the
+/// armed and wishlist screens — most of the app — cannot be reached to photograph. These flags fake
+/// just enough to get there. **They compile to constant `false` in a release build**, so the
+/// shipped binary has no demo path at all and the compiler strips every branch below.
+enum Demo {
+#if DEBUG
+    private static let arguments = ProcessInfo.processInfo.arguments
+    static let isOn = arguments.contains("-demo")
+    /// Sample window and wishlist, held in memory only.
+    static let isSeeded = isOn && arguments.contains("-seed")
+    /// Opens on the second tab, so the wishlist can be shot without faking a tap.
+    static let opensWishlist = isOn && arguments.contains("-wishlist")
+#else
+    static let isOn = false
+    static let isSeeded = false
+    static let opensWishlist = false
+#endif
+}
+
 /// Arming, disarming, the wishlist, and keeping the shield honest with the clock.
 ///
 /// The `DeviceActivity` extension raises and drops the shield while the app is closed. This object
@@ -16,9 +37,28 @@ final class ArmorController: ObservableObject {
     @Published var problem: String?
 
     init() {
-        authorization = AuthorizationCenter.shared.authorizationStatus
+        authorization = Demo.isOn ? .approved : AuthorizationCenter.shared.authorizationStatus
         window = ArmorStore.load()
         wishlist = ArmorStore.loadWishlist()
+        if Demo.isSeeded { seedForScreenshots() }
+    }
+
+    /// Sample state, held in memory and never written to the store.
+    private func seedForScreenshots() {
+        func daysAgo(_ days: Int) -> Date {
+            Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+        }
+        window = ArmorWindow(name: "Payday",
+                             pattern: .monthly(days: [25]),
+                             selection: FamilyActivitySelection())
+        wishlist = Wishlist(items: [
+            WishItem(name: "Running shoes", link: "shop.example.com", price: 420,
+                     addedAt: daysAgo(2)),
+            WishItem(name: "Second air fryer", price: 289,
+                     addedAt: daysAgo(9), skippedAt: daysAgo(6)),
+            WishItem(name: "Concert resale ticket", price: 650,
+                     addedAt: daysAgo(20), skippedAt: daysAgo(18)),
+        ])
     }
 
     var isArmed: Bool { window != nil }
@@ -56,7 +96,7 @@ final class ArmorController: ObservableObject {
         }
 
         let candidate = ArmorWindow(name: name, pattern: pattern, selection: selection)
-        guard !candidate.isEmpty else {
+        guard !candidate.isEmpty || Demo.isOn else {
             problem = "Pick at least one app to shut."
             return
         }
@@ -66,7 +106,8 @@ final class ArmorController: ObservableObject {
         let previous = ArmorStore.load()
         ArmorStore.save(candidate)
         do {
-            try ArmorSchedule.start(candidate)
+            // DeviceActivity has nothing to schedule against on a simulator.
+            if !Demo.isOn { try ArmorSchedule.start(candidate) }
         } catch {
             ArmorStore.save(previous)
             problem = "Couldn't schedule that. \(error.localizedDescription)"
@@ -107,6 +148,7 @@ final class ArmorController: ObservableObject {
     // MARK: keeping it true
 
     func syncWithClock(now: Date = Date()) {
+        guard !Demo.isOn else { return }
         guard let window else {
             Shield.drop()
             return

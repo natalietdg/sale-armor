@@ -5,7 +5,7 @@ import FamilyControls
 struct ContentView: View {
     @StateObject private var controller = ArmorController()
     @Environment(\.scenePhase) private var scenePhase
-    @State private var tab = Tab.guardTab
+    @State private var tab = Demo.opensWishlist ? Tab.wishlist : Tab.guardTab
 
     enum Tab: String, CaseIterable, Identifiable {
         case guardTab = "Guard"
