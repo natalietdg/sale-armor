@@ -105,6 +105,41 @@ final class ScheduleTests: XCTestCase {
         XCTAssertFalse(w.covers(at(26, 0), calendar: calendar))
     }
 
+    // MARK: every double date
+
+    /// 1.1, 2.2, 3.3 … 12.12 — twelve sales a year, not one.
+    func testDoubleDatesCoverTheDayMatchingEachMonth() {
+        let w = window(.doubleDates)
+        var calendar = self.calendar
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+
+        for month in 1...12 {
+            let hit = calendar.date(from: DateComponents(year: 2026, month: month, day: month))!
+            XCTAssertTrue(w.covers(hit, calendar: calendar),
+                          "\(month).\(month) must be covered")
+        }
+    }
+
+    func testDoubleDatesIgnoreEveryOtherDay() {
+        let w = window(.doubleDates)
+        var calendar = self.calendar
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+
+        // August: the 8th is the sale, the 9th and the 7th are not.
+        XCTAssertTrue(w.covers(at(8, 12), calendar: calendar))
+        XCTAssertFalse(w.covers(at(9, 12), calendar: calendar))
+        XCTAssertFalse(w.covers(at(7, 12), calendar: calendar))
+    }
+
+    func testDoubleDatesScheduleTwelveRepeatingIntervals() {
+        let activities = ArmorSchedule.activities(for: window(.doubleDates))
+        XCTAssertEqual(activities.count, 12, "one per month")
+        for (name, schedule) in activities {
+            XCTAssertTrue(schedule.repeats, "these come round every year")
+            XCTAssertTrue(name.rawValue.hasPrefix(ArmorSchedule.prefix))
+        }
+    }
+
     // MARK: what gets scheduled
 
     /// A pattern can need several monitored intervals, because `DeviceActivitySchedule` carries

@@ -9,9 +9,10 @@ import SwiftUI
 /// 2. **Every edge is a hard step.** Borders are drawn as stacked rectangles, and the shield sprite
 ///    is a literal grid of squares, so it stays crisp at any size instead of being a scaled asset.
 ///
-/// **No pixel typeface is shipped.** A licensed bitmap font is a real cost and a licence to track,
-/// so the type is the system monospace at heavy weight with wide tracking. It reads as terminal
-/// rather than as a fake NES font, which is the honest version of the look.
+/// **The typeface is Pixelify Sans**, bundled under the SIL Open Font Licence — free for
+/// commercial use. An earlier version argued that a bitmap font was a licence to track and used the
+/// system monospace instead. That was wrong: OFL fonts cost nothing to ship, and the type is the
+/// largest surface on every screen.
 enum Px {
     /// A deliberately small palette. Picking from a fixed set is most of what makes art look 8-bit.
     static let bg      = Color(hex: 0x0F0F1B)   // near-black, faintly blue
@@ -31,12 +32,12 @@ enum Px {
     // **There is no dimmed set.** An earlier version drained the sword to grey when idle and it
     // read as brown, which is a logo that stops working half the time. The sword is always gold;
     // being armed is said by the words instead.
-    static let goldMetal  = Color(hex: 0xE8B44A)
+    static let goldMetal  = Color(hex: 0xF7CC5E)
     static let silver     = Color(hex: 0xD3D8E6)
     static let ruby       = Color(hex: 0xD62F45)
     static let rubyLit    = Color(hex: 0xFF6B7E)
     /// What a pixel turns into as the gleam passes over it. Two extra colours, not a gradient.
-    static let goldShine  = Color(hex: 0xFFE9A8)
+    static let goldShine  = Color(hex: 0xFFF3C4)
     static let silverShine = Color(hex: 0xFFFFFF)
 
     /// The glow's palette, dimmest to brightest. **Solid colours, never transparent** — gold at low
@@ -46,18 +47,41 @@ enum Px {
     /// dither then only has to blend each neighbouring pair, which is what makes the fade look
     /// continuous instead of like two zones meeting.
     ///
-    /// **Every shade sits below the sword in value and warmer in hue.** An earlier ramp topped out
-    /// at a gold close to `goldMetal`, so at the peak of the flare the blade dissolved into its own
-    /// light. The source has to stay the brightest thing in frame, or it stops looking like the
-    /// source.
-    static let glowRamp: [Color] = [
-        Color(hex: 0x201709),
-        Color(hex: 0x36240D),
-        Color(hex: 0x513413),
-        Color(hex: 0x6E4718),
-        Color(hex: 0x8C5B1D)
+    /// **Every shade sits well below the sword in value.** The source has to stay the brightest
+    /// thing in frame or it stops looking like the source.
+    ///
+    /// Brightness and size are separate dials here, which is worth knowing before touching either:
+    /// the *intensity* function decides how many cells light up at all — that is the glow's size
+    /// and spread — while this palette decides how bright those cells are. Dimming the intensity
+    /// shrinks the glow; dimming the palette does not.
+    /// The hot centre: a small, brighter glow sitting inside the broad dim one, tighter than the
+    /// sword itself. Two light sources rather than one gradient — the wide one says *there is
+    /// light here*, this one says *it is coming from the blade*.
+    static let coreRamp: [Color] = [
+        Color(hex: 0x6E4A1C),
+        Color(hex: 0x9A6624),
+        Color(hex: 0xC2842E)
     ]
 
+    static let glowRamp: [Color] = [
+        Color(hex: 0x171006),
+        Color(hex: 0x281B0A),
+        Color(hex: 0x3E2A10),
+        Color(hex: 0x573A16),
+        Color(hex: 0x6E4A1C)
+    ]
+
+
+    /// The wall. Three shades a hair apart, because a brick pattern you can actually *read* is a
+    /// pattern competing with the text on top of it — this one is meant to be felt, not looked at.
+    /// Tier colours, borrowed from loot rarity because everyone already reads them.
+    static let tierNormal = Color(hex: 0x9AA0B5)   // common
+    static let tierElite  = Color(hex: 0x5FA8E8)   // rare
+    static let tierBoss   = Color(hex: 0xD8524F)   // the one you do not want
+
+    static let mortar   = Color(hex: 0x0B0B13)
+    static let brick    = Color(hex: 0x15151F)
+    static let brickOdd = Color(hex: 0x1A1A26)
 
     /// One unit of the grid. Every size in the app is a multiple of it, which is what keeps the
     /// spacing feeling snapped rather than arbitrary.
@@ -75,9 +99,25 @@ extension Color {
 }
 
 extension Font {
-    /// The app's only typeface. Monospaced, heavy, and always tracked out.
+    /// **Pixelify Sans**, bundled under the SIL Open Font Licence.
+    ///
+    /// The system monospace read as *terminal*, not 8-bit — it was the largest un-pixelated surface
+    /// in the app and everything else was downstream of it. Press Start 2P is the more famous
+    /// choice and was rejected: this app has real sentences in it, and Press Start is unreadable
+    /// below about 14pt.
+    ///
+    /// Falls back to the system monospace if the font ever fails to load, so a missing file is a
+    /// duller app rather than a blank one.
     static func px(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+        // **One PostScript name, not one per weight.** Pixelify Sans is a variable font with a
+        // single weight axis, so `PixelifySans-Bold` does not exist — asking for it returned nil
+        // and every bold call in the app silently fell back to the system monospace. The weight is
+        // applied to the font instead, which drives the axis.
+        let name = "PixelifySans-Regular"
+        guard UIFont(name: name, size: size) != nil else {
+            return .system(size: size, weight: weight, design: .monospaced)
+        }
+        return .custom(name, size: size).weight(weight)
     }
 }
 
@@ -85,6 +125,38 @@ extension View {
     /// Uppercase, spaced, monospaced: the label voice.
     func pxLabel(_ size: CGFloat = 11) -> some View {
         self.font(.px(size, .black)).tracking(size * 0.18).textCase(.uppercase)
+    }
+}
+
+/// A dungeon wall, tiled in the same blocks as everything else.
+///
+/// Drawn once and rasterised rather than re-evaluated: it never changes, and it sits behind every
+/// screen. The variation is a hash of the brick's position, not a random number — a sprite sheet
+/// had no RNG, and a wall that reshuffles on every redraw would shimmer.
+struct PxBricks: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let bw = Px.unit * 8, bh = Px.unit * 3, mortar = Px.unit / 2
+            let rows = Int(size.height / bh) + 2
+            let cols = Int(size.width / bw) + 2
+
+            for row in 0..<rows {
+                // every other course is offset by half a brick — the thing that makes it a wall
+                let shift = row % 2 == 0 ? 0 : bw / 2
+                for col in -1..<cols {
+                    let x = CGFloat(col) * bw + shift
+                    let y = CGFloat(row) * bh
+                    let odd = (row &* 7 &+ col &* 13) % 9 == 0
+                    ctx.fill(Path(CGRect(x: x + mortar, y: y + mortar,
+                                         width: bw - mortar, height: bh - mortar)),
+                             with: .color(odd ? Px.brickOdd : Px.brick))
+                }
+            }
+        }
+        .background(Px.mortar)
+        .drawingGroup()
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
     }
 }
 
@@ -418,9 +490,9 @@ private struct GlowLayer: View, Equatable {
 
                     // A plateau, then a falloff — a real bright mass around the blade rather than
                     // scatter that is as sparse in the middle as it is at the edge.
-                    let core = 0.42
+                    let core = 0.14
                     let t = max(0, (d - core) / (1 - core))
-                    let intensity = min(0.98, pow(1 - t, 1.5)) * brightness
+                    let intensity = min(0.78, pow(1 - t, 1.05)) * brightness
 
                     // Ordered dithering *between adjacent shades* of the ramp: the exact brightness
                     // falls between two palette entries and the Bayer threshold picks which one this
@@ -433,6 +505,28 @@ private struct GlowLayer: View, Equatable {
                     ctx.fill(Path(CGRect(x: xPad + CGFloat(gx) * px, y: yPad + CGFloat(gy) * px,
                                          width: px, height: px)),
                              with: .color(Px.glowRamp[min(index - 1, Px.glowRamp.count - 1)]))
+                }
+            }
+
+            // The hot centre, drawn over the broad glow. Radius is under half the sword's width on
+            // purpose: a bright patch smaller than the object reads as the object being the source,
+            // whereas a bright patch larger than it reads as a lamp behind it.
+            let coreR = Double(fieldW) * 0.085
+            for gy in 0..<fieldH {
+                for gx in 0..<fieldW {
+                    let dx = Double(gx) - cx, dy = (Double(gy) - cy) * 0.92
+                    let d = (dx * dx + dy * dy).squareRoot() / coreR
+                    guard d < 1 else { continue }
+
+                    let intensity = pow(1 - d, 0.9) * brightness
+                    let level = intensity * Double(Px.coreRamp.count)
+                    let base = Int(level)
+                    let index = (level - Double(base)) > SwordSprite.bayer(gx, gy) ? base + 1 : base
+                    guard index > 0 else { continue }
+
+                    ctx.fill(Path(CGRect(x: xPad + CGFloat(gx) * px, y: yPad + CGFloat(gy) * px,
+                                         width: px, height: px)),
+                             with: .color(Px.coreRamp[min(index - 1, Px.coreRamp.count - 1)]))
                 }
             }
         }

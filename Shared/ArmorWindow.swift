@@ -16,6 +16,9 @@ enum ArmorPattern: Codable, Equatable, Hashable {
     case weekly(weekdays: Set<Int>, from: Clock, to: Clock)
     /// Whole days of the month. Payday, the 1st, the 25th.
     case monthly(days: Set<Int>)
+    /// **The day that matches the month, every month**: 1.1, 2.2, 3.3 … 11.11, 12.12.
+    /// A dozen sales a year, so it cannot be expressed as `monthly` — the day changes each time.
+    case doubleDates
 
     var label: String {
         switch self {
@@ -23,6 +26,7 @@ enum ArmorPattern: Codable, Equatable, Hashable {
         case .daily:      "Every day"
         case .weekly:     "Some days"
         case .monthly:    "Days of the month"
+        case .doubleDates: "Double dates"
         }
     }
 }
@@ -78,6 +82,8 @@ struct ArmorWindow: Codable, Equatable {
             return weekdays.contains(day) && withinTime(date, from, to, calendar)
         case let .monthly(days):
             return days.contains(calendar.component(.day, from: date))
+        case .doubleDates:
+            return calendar.component(.day, from: date) == calendar.component(.month, from: date)
         }
     }
 
@@ -243,6 +249,16 @@ enum ArmorSchedule {
                 return (DeviceActivityName("\(prefix).monthly.\(day)"),
                         DeviceActivitySchedule(intervalStart: start, intervalEnd: end, repeats: true))
             }
+
+        case .doubleDates:
+            // Twelve schedules, one per month, each pinned to the day matching its month. A
+            // repeating interval carries a single day, so 1.1 through 12.12 is twelve of them.
+            return (1...12).map { month in
+                var start = all; start.month = month; start.day = month
+                var end = endOfDay; end.month = month; end.day = month
+                return (DeviceActivityName("\(prefix).double.\(month)"),
+                        DeviceActivitySchedule(intervalStart: start, intervalEnd: end, repeats: true))
+            }
         }
     }
 
@@ -279,6 +295,37 @@ enum SaleKind: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// What you are actually fighting. Flavour, not progression — there is no XP here and
+    /// nothing to level, because a wellbeing app you can lose is one people delete.
+    var foe: String {
+        switch self {
+        case .lateNight:     return "Imp"
+        case .retailTherapy: return "Siren"
+        case .payday:        return "Coin Wraith"
+        case .doubleDate:    return "The Twins"
+        case .blackFriday:   return "Demon"
+        }
+    }
+
+    /// Tier is earned by the shape of the threat, not invented: an imp is nightly and short, a
+    /// boss is annual and four days long.
+    var tier: String {
+        switch self {
+        case .lateNight, .retailTherapy: return "Normal"
+        case .payday, .doubleDate:       return "Elite"
+        case .blackFriday:               return "Boss"
+        }
+    }
+
+    /// Rarity, so the tier reads at a glance without being explained.
+    var tierRank: Int {
+        switch self {
+        case .lateNight, .retailTherapy: return 0
+        case .payday, .doubleDate:       return 1
+        case .blackFriday:               return 2
+        }
+    }
+
     /// A short label for the chip.
     ///
     /// The double-date one is **computed from the calendar**, so in September it reads 9.9 and in
@@ -289,9 +336,7 @@ enum SaleKind: String, CaseIterable, Identifiable {
         case .lateNight:     return "Late night"
         case .payday:        return "Payday"
         case .blackFriday:   return "Black Friday"
-        case .doubleDate:
-            let m = calendar.component(.month, from: now)
-            return "\(m).\(m) sale"
+        case .doubleDate:  return "Double dates"
         case .retailTherapy: return "Retail therapy"
         }
     }
@@ -313,12 +358,8 @@ enum SaleKind: String, CaseIterable, Identifiable {
             return .dateRange(start: start, end: end)
 
         case .doubleDate:
-            // **This month's** double date: 8.8 in August, 9.9 in September, 11.11 in November.
-            // Not the next one anywhere in the calendar — the chip has to name the sale the user
-            // is currently living through, or the label and the schedule disagree.
-            let day = SaleDates.doubleDate(inMonthOf: now, calendar: calendar)
-            let end = calendar.date(byAdding: .day, value: 1, to: day) ?? day
-            return .dateRange(start: day, end: end)
+            // Every one of them: 1.1, 2.2, 3.3 … 12.12. Twelve sales a year, not one.
+            return .doubleDates
 
         case .retailTherapy:
             // Not a sale. A mood, and it has a timetable: Friday to Sunday evenings.

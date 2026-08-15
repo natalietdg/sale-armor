@@ -31,6 +31,10 @@ targets:
       path: SaleArmor/Info.plist
       properties:
         CFBundleDisplayName: Sale Armor
+        # Pixelify Sans, SIL Open Font Licence — free for commercial use. Chosen over Press Start
+        # 2P because the app has real sentences in it and Press Start is unreadable below ~14pt.
+        UIAppFonts:
+          - PixelifySans.ttf
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:

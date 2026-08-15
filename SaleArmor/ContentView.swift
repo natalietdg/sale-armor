@@ -15,7 +15,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            Px.bg.ignoresSafeArea()
+            PxBricks()
             VStack(spacing: 0) {
                 if controller.authorization == .approved {
                     tabBar
@@ -116,7 +116,7 @@ private struct ArmView: View {
     @State private var selection = FamilyActivitySelection()
     @State private var picking = false
 
-    private static let kinds = ["Once", "Every day", "Some days", "Dates"]
+    private static let kinds = ["Once", "Daily", "Days", "Dates", "N.N"]
     private static let dayLetters = ["S", "M", "T", "W", "T", "F", "S"]
 
     private var pattern: ArmorPattern {
@@ -124,6 +124,7 @@ private struct ArmView: View {
         case 0:  .dateRange(start: start, end: end)
         case 2:  .weekly(weekdays: weekdays, from: from, to: to)
         case 3:  .monthly(days: monthDays)
+        case 4:  .doubleDates
         default: .daily(from: from, to: to)
         }
     }
@@ -151,13 +152,21 @@ private struct ArmView: View {
                               spacing: Px.unit) {
                         ForEach(SaleKind.allCases) { sale in
                             Button { apply(sale) } label: {
-                                Text(sale.short())
-                                    .font(.px(11, .black))
-                                    .multilineTextAlignment(.center)
-                                    .foregroundStyle(chosen == sale ? Px.bg : Px.ink)
-                                    .frame(maxWidth: .infinity, minHeight: Px.unit * 8)
-                                    .padding(.horizontal, Px.unit)
-                                    .background(chosen == sale ? Px.goldMetal : Px.panel)
+                                VStack(spacing: Px.unit) {
+                                    Text(sale.short())
+                                        .font(.px(11, .black))
+                                        .multilineTextAlignment(.center)
+                                        .foregroundStyle(chosen == sale ? Px.bg : Px.ink)
+                                    HStack(spacing: Px.unit) {
+                                        tag(sale.foe, colour: Px.ink, on: chosen == sale)
+                                        tag(sale.tier, colour: Self.tierColour(sale.tierRank),
+                                            on: chosen == sale)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, minHeight: Px.unit * 12)
+                                .padding(.horizontal, Px.unit)
+                                .padding(.vertical, Px.unit * 2)
+                                .background(chosen == sale ? Px.goldMetal : Px.panel)
                             }
                             .accessibilityIdentifier("sale-\(sale.rawValue)")
                         }
@@ -219,6 +228,8 @@ private struct ArmView: View {
             kind = 2; weekdays = days; from = f; to = t
         case let .monthly(days):
             kind = 3; monthDays = days
+        case .doubleDates:
+            kind = 4
         }
     }
 
@@ -280,6 +291,9 @@ private struct ArmView: View {
                     }
                 }
             }
+        case 4:
+            Text("Every 1.1, 2.2, 3.3 … 11.11 and 12.12. Twelve sales a year, all day.")
+                .font(.px(11)).foregroundStyle(Px.dim)
         default:
             timeRow
         }
@@ -307,6 +321,24 @@ private struct ArmView: View {
                     .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.ink))
             }
         }
+    }
+
+    private static func tierColour(_ rank: Int) -> Color {
+        switch rank {
+        case 2:  Px.tierBoss
+        case 1:  Px.tierElite
+        default: Px.tierNormal
+        }
+    }
+
+    /// A tag: the foe, and how hard it hits. Flavour only — nothing here levels up.
+    private func tag(_ text: String, colour: Color, on selected: Bool) -> some View {
+        Text(text.uppercased())
+            .font(.px(9, .black)).tracking(0.6)
+            .foregroundStyle(colour)
+            .padding(.horizontal, Px.unit)
+            .padding(.vertical, Px.unit / 2)
+            .background(Px.bg.opacity(selected ? 0.55 : 0.75))
     }
 
     private func field<C: View>(_ label: String, @ViewBuilder _ control: () -> C) -> some View {
@@ -384,6 +416,8 @@ private struct ArmedView: View {
             "\(days.count) day\(days.count == 1 ? "" : "s") · \(from.text) – \(to.text)"
         case let .monthly(days):
             days.sorted().map(String.init).joined(separator: ", ")
+        case .doubleDates:
+            "1.1 · 2.2 · … · 12.12"
         }
     }
 }
