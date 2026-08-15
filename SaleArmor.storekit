@@ -1,7 +1,23 @@
 {
   "identifier": "66bb7fc5-808a-55bf-ba0a-c14a151498da",
   "nonRenewingSubscriptions": [],
-  "products": [],
+  "products": [
+    {
+      "displayPrice": "299.99",
+      "familyShareable": false,
+      "internalID": "21451201",
+      "localizations": [
+        {
+          "description": "Sale Armor, paid once.",
+          "displayName": "Lifetime",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.natalieleong.salearmor.lifetime",
+      "referenceName": "Lifetime",
+      "type": "NonConsumable"
+    }
+  ],
   "settings": {
     "_failTransactionsEnabled": false,
     "_locale": "en_US"

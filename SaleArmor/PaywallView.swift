@@ -117,16 +117,22 @@ struct PaywallView: View {
 
     private func period(_ package: Package) -> String {
         switch package.packageType {
-        case .annual:  "Every year"
-        case .monthly: "Every month"
-        case .weekly:  "Every week"
-        default:       package.storeProduct.localizedTitle
+        case .annual:   "Every year"
+        case .monthly:  "Every month"
+        case .weekly:   "Every week"
+        case .lifetime: "Once, forever"
+        default:        package.storeProduct.localizedTitle
         }
     }
 
-    /// Apple requires the renewal mechanics in the binary, not only in the App Store metadata.
+    /// Apple requires the renewal mechanics in the binary, not only in the App Store metadata —
+    /// and requires them to be *true*, which is why lifetime gets its own sentence rather than
+    /// sitting under a blanket claim that everything renews.
     private var renewalTerms: String {
-        """
+        if chosen?.packageType == .lifetime {
+            return "One payment. Nothing renews, nothing to cancel."
+        }
+        return """
         Renews automatically until cancelled. Cancel any time in Settings, \
         at least a day before the period ends.
         """
