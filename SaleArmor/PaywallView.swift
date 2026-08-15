@@ -59,9 +59,9 @@ struct PaywallView: View {
         }
         .task {
             await subscription.start()
-            // Annual first: it is the better deal, and defaulting to the cheaper-per-month option
-            // is the honest default rather than the merely profitable one.
-            chosen = subscription.offering?.annual ?? subscription.offering?.availablePackages.first
+            // Weekly is pre-selected on purpose — it is the plan meant to sell, and the option
+            // already ticked is the single strongest lever on this screen.
+            chosen = subscription.offering?.weekly ?? subscription.offering?.availablePackages.first
         }
     }
 
@@ -75,9 +75,19 @@ struct PaywallView: View {
         }
     }
 
+    /// Explicit order, cheapest first, rather than whatever order the offering happens to arrive
+    /// in. Position is doing work here — the monthly plan is the one meant to sell, so it sits at
+    /// the top where the eye lands and where the pre-selection already is.
+    private var ordered: [Package] {
+        let rank: [PackageType: Int] = [.weekly: 0, .monthly: 1, .annual: 2, .lifetime: 3]
+        return (subscription.offering?.availablePackages ?? [])
+            .sorted { rank[$0.packageType, default: 9] < rank[$1.packageType, default: 9] }
+    }
+
     @ViewBuilder
     private var packages: some View {
-        if let packages = subscription.offering?.availablePackages, !packages.isEmpty {
+        if !ordered.isEmpty {
+            let packages = ordered
             VStack(spacing: Px.unit * 2) {
                 ForEach(packages, id: \.identifier) { package in
                     Button { chosen = package } label: {

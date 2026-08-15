@@ -15,7 +15,7 @@
         {
           "adHocOffers": [],
           "codeOffers": [],
-          "displayPrice": "4.99",
+          "displayPrice": "9.99",
           "familyShareable": false,
           "groupNumber": 1,
           "internalID": "21451101",
@@ -36,7 +36,7 @@
         {
           "adHocOffers": [],
           "codeOffers": [],
-          "displayPrice": "29.99",
+          "displayPrice": "99.99",
           "familyShareable": false,
           "groupNumber": 1,
           "internalID": "21451102",
@@ -51,6 +51,27 @@
           "productID": "com.natalieleong.salearmor.annual",
           "recurringSubscriptionPeriod": "P1Y",
           "referenceName": "Annual",
+          "subscriptionGroupID": "21451001",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "3.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "21451103",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Sale Armor, every week.",
+              "displayName": "Weekly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.natalieleong.salearmor.weekly",
+          "recurringSubscriptionPeriod": "P1W",
+          "referenceName": "Weekly",
           "subscriptionGroupID": "21451001",
           "type": "RecurringSubscription"
         }
