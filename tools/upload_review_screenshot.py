@@ -23,7 +23,7 @@ import urllib.request
 import asc
 
 
-def upload(reservation_type, relationship, target_id, path):
+def upload(reservation_type, relationship, target_type, target_id, path):
     data = open(path, "rb").read()
     name = path.split("/")[-1]
 
@@ -31,9 +31,7 @@ def upload(reservation_type, relationship, target_id, path):
         "data": {
             "type": reservation_type,
             "attributes": {"fileName": name, "fileSize": len(data)},
-            "relationships": {relationship: {"data": {"type": relationship + "s"
-                                                      if not relationship.endswith("s") else relationship,
-                                                      "id": target_id}}},
+            "relationships": {relationship: {"data": {"type": target_type, "id": target_id}}},
         }
     })
     if status != 201:
@@ -63,10 +61,10 @@ if __name__ == "__main__":
 
     for name, sub_id in asc.SUBSCRIPTIONS.items():
         print(f"{name:9}", upload("subscriptionAppStoreReviewScreenshots", "subscription",
-                                  sub_id, screenshot))
+                                  "subscriptions", sub_id, screenshot))
 
     print("lifetime ", upload("inAppPurchaseAppStoreReviewScreenshots", "inAppPurchaseV2",
-                              asc.LIFETIME_IAP, screenshot))
+                              "inAppPurchases", asc.LIFETIME_IAP, screenshot))
 
     print("\nstates now:")
     for name, sub_id in asc.SUBSCRIPTIONS.items():
