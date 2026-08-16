@@ -394,7 +394,7 @@ private struct ArmedView: View {
 
             if saved > 0 {
                 VStack(spacing: Px.unit) {
-                    Text("Not spent so far").pxLabel(9).foregroundStyle(Px.dim)
+                    Text("Money that stayed yours").pxLabel(9).foregroundStyle(Px.dim)
                     Text(saved.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")))
                         .font(.px(26, .black)).foregroundStyle(Px.goldMetal)
                         .accessibilityIdentifier("armedSaved")
@@ -446,47 +446,32 @@ private struct WishlistView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Px.unit * 5) {
-                savedPanel
+                defendedPanel
+                parkForm
 
-                PxPanel {
-                    VStack(alignment: .leading, spacing: Px.unit * 3) {
-                        Text("What did you want to buy?").pxLabel().foregroundStyle(Px.gold)
-                        TextField("", text: $name, prompt: Text("Those trainers").foregroundColor(Px.dim))
-                            .font(.px(14, .black)).foregroundStyle(Px.ink).textFieldStyle(.plain)
-                            .accessibilityIdentifier("wishName")
-                        TextField("", text: $link, prompt: Text("Link (optional)").foregroundColor(Px.dim))
-                            .font(.px(12)).foregroundStyle(Px.dim).textFieldStyle(.plain)
-                            .textInputAutocapitalization(.never)
-                            .accessibilityIdentifier("wishLink")
-                        TextField("", text: $price, prompt: Text("Price").foregroundColor(Px.dim))
-                            .font(.px(14, .black)).foregroundStyle(Px.ink).textFieldStyle(.plain)
-                            .keyboardType(.decimalPad)
-                            .accessibilityIdentifier("wishPrice")
-                        Button("Park it") {
-                            controller.addWish(name: name, link: link,
-                                               price: Double(price) ?? 0)
-                            name = ""; link = ""; price = ""
-                        }
-                        .buttonStyle(PxButtonStyle())
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                        .accessibilityIdentifier("parkIt")
-                    }
+                // Cooled items first. Something parked long enough to decide on is the only thing
+                // on this screen that wants an answer today; everything else is just waiting.
+                let cooled = controller.wishlist.open.filter { $0.isCool() }
+                let waiting = controller.wishlist.open.filter { !$0.isCool() }
+
+                if !cooled.isEmpty {
+                    Text("Still worth it?").pxLabel().foregroundStyle(Px.gold)
+                    ForEach(cooled) { item in decisionCard(item) }
                 }
 
-                if !controller.wishlist.open.isEmpty {
-                    Text("Parked").pxLabel().foregroundStyle(Px.dim)
-                    ForEach(controller.wishlist.open) { item in
-                        openRow(item)
-                    }
+                if !waiting.isEmpty {
+                    Text("Cooling off").pxLabel().foregroundStyle(Px.dim)
+                    ForEach(waiting) { item in waitingCard(item) }
                 }
 
                 if !controller.wishlist.skipped.isEmpty {
-                    Text("Didn't buy").pxLabel().foregroundStyle(Px.dim)
+                    Text("Defended").pxLabel().foregroundStyle(Px.dim)
                     ForEach(controller.wishlist.skipped) { item in
                         HStack {
                             Text(item.name).font(.px(12)).foregroundStyle(Px.dim)
                             Spacer()
-                            Text(Self.money(item.price)).font(.px(12, .black)).foregroundStyle(Px.goldMetal)
+                            Text("+ " + Self.money(item.price))
+                                .font(.px(12, .black)).foregroundStyle(Px.goldMetal)
                         }
                         .padding(.vertical, Px.unit)
                     }
@@ -495,42 +480,109 @@ private struct WishlistView: View {
         }
     }
 
-    /// The whole point of the feature: what the shield has been worth.
-    private var savedPanel: some View {
+    /// The whole point of the feature: money that stayed yours.
+    ///
+    /// This counts killed items only, never parked ones — see `Wishlist.saved`. A total that jumped
+    /// the moment you typed a price would be a number nobody believes, least of all the person who
+    /// typed it.
+    private var defendedPanel: some View {
         PxPanel(stroke: Px.goldMetal) {
             VStack(alignment: .leading, spacing: Px.unit) {
                 Text("Not spent").pxLabel().foregroundStyle(Px.goldMetal)
                 Text(Self.money(controller.wishlist.saved))
                     .font(.px(34, .black)).foregroundStyle(Px.ink)
                     .accessibilityIdentifier("savedTotal")
-                Text("Nothing to hit, nothing to keep up. Just what you didn't spend.")
+                Text(controller.wishlist.killed == 0
+                     ? "Money that stayed yours. Nothing counts until you turn it down."
+                     : "Money that stayed yours. \(controller.wishlist.killed) seen off.")
                     .font(.px(11)).foregroundStyle(Px.dim)
             }
         }
     }
 
-    private func openRow(_ item: WishItem) -> some View {
+    /// "About to buy", not "want". One records an interrupted purchase; the other invites shopping.
+    private var parkForm: some View {
         PxPanel {
+            VStack(alignment: .leading, spacing: Px.unit * 3) {
+                Text("Park an impulse").pxLabel().foregroundStyle(Px.gold)
+                TextField("", text: $name,
+                          prompt: Text("What were you about to buy?").foregroundColor(Px.dim))
+                    .font(.px(14, .black)).foregroundStyle(Px.ink).textFieldStyle(.plain)
+                    .accessibilityIdentifier("wishName")
+                TextField("", text: $link, prompt: Text("Link (optional)").foregroundColor(Px.dim))
+                    .font(.px(12)).foregroundStyle(Px.dim).textFieldStyle(.plain)
+                    .textInputAutocapitalization(.never)
+                    .accessibilityIdentifier("wishLink")
+                TextField("", text: $price, prompt: Text("Price").foregroundColor(Px.dim))
+                    .font(.px(14, .black)).foregroundStyle(Px.ink).textFieldStyle(.plain)
+                    .keyboardType(.decimalPad)
+                    .accessibilityIdentifier("wishPrice")
+                Button("Park it") {
+                    controller.addWish(name: name, link: link, price: Double(price) ?? 0)
+                    name = ""; link = ""; price = ""
+                }
+                .buttonStyle(PxButtonStyle())
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityIdentifier("parkIt")
+
+                Text("It waits \(WishItem.coolingOff) days. Then Sale Armor asks you once.")
+                    .font(.px(10)).foregroundStyle(Px.dim)
+            }
+        }
+    }
+
+    /// Parked long enough that the impulse has passed, so the question is finally fair to ask.
+    private func decisionCard(_ item: WishItem) -> some View {
+        PxPanel(stroke: Px.gold) {
             VStack(alignment: .leading, spacing: Px.unit * 2) {
-                HStack {
-                    Text(item.name).font(.px(14, .black)).foregroundStyle(Px.ink)
-                    Spacer()
-                    Text(Self.money(item.price)).font(.px(14, .black)).foregroundStyle(Px.gold)
-                }
-                if let link = item.link, let url = URL(string: link) {
-                    Link(destination: url) {
-                        Text(link).font(.px(10)).foregroundStyle(Px.dim).lineLimit(1)
-                    }
-                }
+                itemHeading(item)
+                Text("You parked this \(item.daysParked()) days ago. Still worth it?")
+                    .font(.px(11)).foregroundStyle(Px.ink)
                 HStack(spacing: Px.unit * 2) {
-                    Button("Didn't buy") { controller.skip(item.id) }
+                    // "Nah" leads, because turning it down is the outcome worth making easy.
+                    Button("Nah") { controller.skip(item.id) }
                         .buttonStyle(PxButtonStyle())
                         .accessibilityIdentifier("skip-\(item.name)")
-                    Button("Bought it") { controller.bought(item.id) }
+                    Button("I still want it") { controller.bought(item.id) }
                         .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.dim))
                 }
             }
         }
+    }
+
+    /// Still cooling. No buttons: offering the decision now is offering it while the want is loud.
+    private func waitingCard(_ item: WishItem) -> some View {
+        PxPanel {
+            VStack(alignment: .leading, spacing: Px.unit) {
+                itemHeading(item)
+                Text(Self.survived(item))
+                    .font(.px(10)).tracking(1).textCase(.uppercase)
+                    .foregroundStyle(Px.armor)
+            }
+        }
+    }
+
+    private func itemHeading(_ item: WishItem) -> some View {
+        VStack(alignment: .leading, spacing: Px.unit) {
+            HStack {
+                Text(item.name).font(.px(14, .black)).foregroundStyle(Px.ink)
+                Spacer()
+                Text(Self.money(item.price)).font(.px(14, .black)).foregroundStyle(Px.gold)
+            }
+            if let link = item.link, let url = URL(string: link) {
+                Link(destination: url) {
+                    Text(link).font(.px(10)).foregroundStyle(Px.dim).lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private static func survived(_ item: WishItem) -> String {
+        let days = item.daysParked()
+        let left = WishItem.coolingOff - days
+        return days == 0
+            ? "Parked today · \(left) to go"
+            : "\(days) day\(days == 1 ? "" : "s") survived · \(left) to go"
     }
 
     private static func money(_ amount: Double) -> String {

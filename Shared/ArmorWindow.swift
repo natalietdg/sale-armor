@@ -118,6 +118,22 @@ struct WishItem: Codable, Equatable, Identifiable {
     var boughtAt: Date?
 
     var isOpen: Bool { skippedAt == nil && boughtAt == nil }
+
+    /// Whole days since it was parked.
+    ///
+    /// Shown as "survived", because waiting is the only thing that turns a want into a decision.
+    /// It is also the honest unit: the app cannot know whether you wanted it less, only that you
+    /// did not buy it, and for how long.
+    func daysParked(now: Date = Date(), calendar: Calendar = .current) -> Int {
+        max(0, calendar.dateComponents([.day], from: addedAt, to: now).day ?? 0)
+    }
+
+    /// Long enough for the impulse to have passed, so the question is worth asking.
+    static let coolingOff = 3
+
+    func isCool(now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        daysParked(now: now, calendar: calendar) >= Self.coolingOff
+    }
 }
 
 struct Wishlist: Codable, Equatable {
@@ -127,7 +143,14 @@ struct Wishlist: Codable, Equatable {
     var skipped: [WishItem] { items.filter { $0.skippedAt != nil } }
 
     /// What the shield is worth so far.
+    ///
+    /// **Only things deliberately killed count.** Parking a thousand-pound coat does not make you a
+    /// thousand pounds richer five seconds later, and a total that moved the moment you typed a
+    /// price would be a number nobody believes — including the person who typed it.
     var saved: Double { skipped.reduce(0) { $0 + $1.price } }
+
+    /// How many wants were seen off. The count is the streak-free version of a streak.
+    var killed: Int { skipped.count }
 
     mutating func add(_ item: WishItem) { items.append(item) }
 

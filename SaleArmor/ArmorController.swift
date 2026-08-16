@@ -52,12 +52,12 @@ final class ArmorController: ObservableObject {
                              pattern: .monthly(days: [25]),
                              selection: FamilyActivitySelection())
         wishlist = Wishlist(items: [
-            WishItem(name: "Running shoes", link: "shop.example.com", price: 420,
-                     addedAt: daysAgo(2)),
-            WishItem(name: "Second air fryer", price: 289,
-                     addedAt: daysAgo(9), skippedAt: daysAgo(6)),
+            WishItem(name: "New Balance 530", link: "shop.example.com", price: 489,
+                     addedAt: daysAgo(5)),                       // cooled: wants an answer
+            WishItem(name: "Second air fryer", price: 289, addedAt: daysAgo(1)),  // still cooling
             WishItem(name: "Concert resale ticket", price: 650,
                      addedAt: daysAgo(20), skippedAt: daysAgo(18)),
+            WishItem(name: "COS bag", price: 690, addedAt: daysAgo(30), skippedAt: daysAgo(26)),
         ])
     }
 

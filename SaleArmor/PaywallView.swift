@@ -64,9 +64,9 @@ struct PaywallView: View {
 
     private var promises: some View {
         VStack(alignment: .leading, spacing: Px.unit * 2) {
-            promise("Shut the shopping apps on the days you overspend")
+            promise("Shut the shopping apps before you can open them")
             promise("Payday, late night, 11.11 — armed on a schedule")
-            promise("Park what you wanted, count what you didn't spend")
+            promise("Track how much you saved, to the last cent")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

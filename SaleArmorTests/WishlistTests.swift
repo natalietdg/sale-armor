@@ -98,4 +98,56 @@ final class WishlistTests: XCTestCase {
         XCTAssertEqual(back.saved, 99.99, accuracy: 0.001)
         XCTAssertEqual(back.skipped.first?.name, "Shoes")
     }
+
+    // MARK: cooling off
+
+    /// The number has to be *earned*. Parking a thousand-pound coat must not make anyone a
+    /// thousand pounds richer the instant they type the price — that is the difference between a
+    /// total people believe and a vanity metric.
+    func testParkingSomethingDoesNotCountAsSaving() {
+        var list = Wishlist()
+        list.add(item("Handbag", 5000))
+        XCTAssertEqual(list.saved, 0)
+        XCTAssertEqual(list.killed, 0)
+    }
+
+    func testOnlyTurningItDownCounts() {
+        var list = Wishlist()
+        let bag = item("Handbag", 5000)
+        let shoes = item("Shoes", 200)
+        list.add(bag)
+        list.add(shoes)
+
+        list.bought(bag.id)      // bought anyway: recorded, but saves nothing
+        list.skip(shoes.id)
+
+        XCTAssertEqual(list.saved, 200)
+        XCTAssertEqual(list.killed, 1)
+    }
+
+    func testSomethingParkedTodayIsNotYetCool() {
+        let fresh = WishItem(name: "Trainers", price: 489, addedAt: Date())
+        XCTAssertEqual(fresh.daysParked(), 0)
+        XCTAssertFalse(fresh.isCool())
+    }
+
+    func testItGoesCoolOnTheThirdDay() {
+        let calendar = Calendar.current
+        let now = Date()
+        func parked(_ daysAgo: Int) -> WishItem {
+            WishItem(name: "Trainers", price: 489,
+                     addedAt: calendar.date(byAdding: .day, value: -daysAgo, to: now)!)
+        }
+        XCTAssertFalse(parked(2).isCool(now: now))
+        XCTAssertTrue(parked(3).isCool(now: now))
+        XCTAssertTrue(parked(40).isCool(now: now))
+        XCTAssertEqual(parked(40).daysParked(now: now), 40)
+    }
+
+    /// A clock that has gone backwards — a timezone change, a manual clock edit — must not produce
+    /// a negative day count on screen.
+    func testAFutureDateDoesNotGoNegative() {
+        let later = Calendar.current.date(byAdding: .day, value: 5, to: Date())!
+        XCTAssertEqual(WishItem(name: "x", price: 1, addedAt: later).daysParked(), 0)
+    }
 }
