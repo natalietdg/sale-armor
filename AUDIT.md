@@ -50,3 +50,27 @@ Append-only. Corrections are new entries referencing the earlier one, never edit
 | 34 | 2026-08-15 | DECISION | Claude | Set Opal-parity $99.99/yr and $19.99/mo, on verified competitor pricing. Changeable until submission | web search: Opal $99.99/yr, Freedom $39.99/yr, one sec $19.99/yr |
 | 35 | 2026-08-15 | ACTION | Claude | Set worldwide availability (175 territories), prices, and localisations on both products | ASC API |
 | 36 | 2026-08-15 | ACTION | Claude | Corrected own earlier figure: one sec is $19.99/yr, not $15.99 as stated in the price picker | supersedes that preview text |
+
+## Session continued — 2026-08-16, submission prep
+
+| # | Date | Type | Actor | What | Evidence / file |
+|---|---|---|---|---|---|
+| 37 | 2026-08-16 | ACTION | Claude | Rebuilt Wishlist as a cooling-off vault: 3-day wait, one question, "about to buy" not "want" | `ContentView.swift`, 5 new tests |
+| 38 | 2026-08-16 | ACTION | Claude | Added local notification fired when a parked item cools; cancelled on decision | `SaleArmor/Reminders.swift` |
+| 39 | 2026-08-16 | ACTION | Natalie | Supplied RevenueCat `appl_` SDK key | pasted; public by design, ships in binary |
+| 40 | 2026-08-16 | ACTION | Claude | Found RevenueCat packages bound to **Test Store** placeholders; attached the four real App Store products | RevenueCat v2 API |
+| 41 | 2026-08-16 | ACTION | Claude | Found app had **no territory availability at all**; set 175 | `POST /v2/appAvailabilities` |
+| 42 | 2026-08-16 | ACTION | Claude | Found subscriptions priced in **USA only** while sold in 175 territories — the real cause of "must add a subscription price". Added 522 prices via price-point equalizations | `tools/price_all_territories.py` |
+| 43 | 2026-08-16 | ACTION | Claude | Uploaded App Review screenshot to 3 subscriptions; 4 listing screenshots at 1320×2868 | `tools/upload_*.py` |
+| 44 | 2026-08-16 | ACTION | Claude | Wrote description, promo text, keywords (91/100), support + marketing URLs | ASC API |
+| 45 | 2026-08-16 | ACTION | Claude | **Build 3 uploaded and attached to version 1.0** | Delivery UUID `c812e32f` |
+| 46 | 2026-08-16 | ACTION | Claude | Set age rating 4+, categories Finance/Productivity, review contact and notes | ASC API |
+| 47 | 2026-08-16 | ACTION | Claude | **Deployed salearmor.pages.dev** — all four pages verified 200 | wrangler |
+| 48 | 2026-08-16 | ACTION | Claude | Set copyright, content rights, privacy policy URL, subtitle, and free app price schedule | ASC API |
+| 49 | 2026-08-16 | DECISION | Claude | Corrected own claim: subscription availability was never broken; the 400 was a malformed query. App-level availability was the real gap | supersedes that statement |
+
+## Open
+
+- **App Privacy questionnaire** — Admin-only, dashboard only. Natalie's action.
+- Lifetime IAP price schedule returns 400; needs the same territory treatment as the subscriptions.
+- No git remote. All commits local.
