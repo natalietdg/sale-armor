@@ -133,15 +133,31 @@ final class ArmorController: ObservableObject {
 
     func addWish(name: String, link: String?, price: Double) {
         let trimmed = link?.trimmingCharacters(in: .whitespaces)
-        wishlist.add(WishItem(name: name,
-                              link: (trimmed?.isEmpty ?? true) ? nil : trimmed,
-                              price: max(0, price)))
+        let item = WishItem(name: name,
+                            link: (trimmed?.isEmpty ?? true) ? nil : trimmed,
+                            price: max(0, price))
+        wishlist.add(item)
         persistWishlist()
+
+        guard !Demo.isOn else { return }
+        // Asked here rather than at launch: a prompt that arrives while you are using the feature
+        // is one you understand. The check is what makes parking work — without it, the decision
+        // only happens if you happen to open the app on the right day.
+        Task {
+            await Reminders.requestPermission()
+            Reminders.scheduleCheck(for: item)
+        }
     }
 
-    func skip(_ id: UUID) { wishlist.skip(id); persistWishlist() }
-    func bought(_ id: UUID) { wishlist.bought(id); persistWishlist() }
-    func removeWish(_ id: UUID) { wishlist.remove(id); persistWishlist() }
+    /// Deciding cancels the pending check. A question already answered must never arrive later.
+    func skip(_ id: UUID) { decide { wishlist.skip(id) }; Reminders.cancelCheck(for: id) }
+    func bought(_ id: UUID) { decide { wishlist.bought(id) }; Reminders.cancelCheck(for: id) }
+    func removeWish(_ id: UUID) { decide { wishlist.remove(id) }; Reminders.cancelCheck(for: id) }
+
+    private func decide(_ change: () -> Void) {
+        change()
+        persistWishlist()
+    }
 
     private func persistWishlist() { ArmorStore.saveWishlist(wishlist) }
 

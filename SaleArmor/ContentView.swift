@@ -525,7 +525,7 @@ private struct WishlistView: View {
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 .accessibilityIdentifier("parkIt")
 
-                Text("It waits \(WishItem.coolingOff) days. Then Sale Armor asks you once.")
+                Text("It waits \(WishItem.coolingOff) days. Then Sale Armor asks you once — one\nnotification per thing, and nothing else.")
                     .font(.px(10)).foregroundStyle(Px.dim)
             }
         }
