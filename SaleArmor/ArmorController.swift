@@ -17,10 +17,15 @@ enum Demo {
     static let isSeeded = isOn && arguments.contains("-seed")
     /// Opens on the second tab, so the wishlist can be shot without faking a tap.
     static let opensWishlist = isOn && arguments.contains("-wishlist")
+    /// Shows the paywall with sample plans. A simulator cannot reach App Store products, so this
+    /// is the only way to see the layout — and it is how the App Review screenshot is taken, since
+    /// Apple needs to see where the subscription is presented, not a failed network call.
+    static let showsPaywall = isOn && arguments.contains("-paywall")
 #else
     static let isOn = false
     static let isSeeded = false
     static let opensWishlist = false
+    static let showsPaywall = false
 #endif
 }
 

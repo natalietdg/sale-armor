@@ -38,8 +38,27 @@ final class Subscription: ObservableObject {
     private static let cacheKey = "subscription.isActive"
 
     init() {
-        isActive = Demo.isOn || UserDefaults.standard.bool(forKey: Self.cacheKey)
+        isActive = (Demo.isOn && !Demo.showsPaywall)
+            || UserDefaults.standard.bool(forKey: Self.cacheKey)
+        if Demo.showsPaywall { plans = Self.samplePlans }
     }
+
+    /// The real configured prices, with no store behind them. Used only for the paywall
+    /// screenshot; `package` is nil, so nothing here can be bought.
+    private static let samplePlans = [
+        Plan(id: "weekly", term: "Every week", price: "$3.99", unit: "$0.57 a day",
+             badge: "POPULAR", renews: true, package: nil,
+             productID: "", amount: nil, periodDays: 7),
+        Plan(id: "monthly", term: "Every month", price: "$9.99", unit: "$2.31 a week",
+             badge: nil, renews: true, package: nil,
+             productID: "", amount: nil, periodDays: 30.44),
+        Plan(id: "annual", term: "Every year", price: "$99.99", unit: "$8.33 a month",
+             badge: "BEST VALUE", renews: true, package: nil,
+             productID: "", amount: nil, periodDays: 365.25),
+        Plan(id: "lifetime", term: "Once, forever", price: "$299.99", unit: "No renewal, ever",
+             badge: nil, renews: false, package: nil,
+             productID: "", amount: nil, periodDays: nil),
+    ]
 
     /// Reads the API key from the Info.plist rather than hardcoding it, so the key can change
     /// without a code edit. A RevenueCat *public* SDK key is not a secret — it is designed to ship
@@ -51,7 +70,7 @@ final class Subscription: ObservableObject {
     }
 
     func start() async {
-        guard !Demo.isOn else { return }
+        guard !Demo.isOn else { return }   // sample plans are already in place
         guard let apiKey = Self.apiKey else {
             problem = "The store isn't configured yet."
             return
