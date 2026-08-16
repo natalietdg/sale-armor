@@ -79,3 +79,5 @@ Append-only. Corrections are new entries referencing the earlier one, never edit
 | 52 | 2026-08-16 | ACTION | Claude | Rebuilt the web sword from the app's own sprite grid; added the Bayer-dithered glow and glints | `~/landing/salearmor/style.css` |
 | 53 | 2026-08-16 | ACTION | Claude | Installed `native-app-designer` skill from erichowens/some_claude_skills | `~/.claude/skills/` |
 | 54 | 2026-08-16 | ACTION | Claude | Exported a 1024×1024 sword PNG for a profile picture | `~/Desktop/sale-armor-sword.png` |
+| 55 | 2026-08-16 | ACTION | Natalie | **SUBMITTED SALE ARMOR FOR REVIEW** — version 1.0, build 3, four products | submission `b1dbd0ea`, WAITING_FOR_REVIEW, 14:49 UTC |
+| 56 | 2026-08-16 | ACTION | Claude | API submit refused on subscription-group state; Natalie completed it in the dashboard | `PATCH /v1/reviewSubmissions` 409 |
