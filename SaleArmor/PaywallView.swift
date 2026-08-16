@@ -18,6 +18,14 @@ struct Plan: Identifiable, Equatable {
     let renews: Bool
     let package: Package?
 
+    /// The store's product id, so an active entitlement can be matched back to the plan it is on.
+    let productID: String
+    /// The price as a number. Kept alongside `price` because the displayed string is localised and
+    /// cannot be done arithmetic on.
+    let amount: Double?
+    /// How long one period lasts. Nil for lifetime, which has no period.
+    let periodDays: Double?
+
     static func == (a: Plan, b: Plan) -> Bool { a.id == b.id }
 }
 

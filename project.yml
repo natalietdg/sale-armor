@@ -14,7 +14,7 @@ settings:
     DEVELOPMENT_TEAM: "DC4T539CW7"
     # Filled in from RevenueCat → Project → API keys. Empty means the paywall reports that the
     # store is not configured rather than crashing.
-    REVENUECAT_API_KEY: ""
+    REVENUECAT_API_KEY: "appl_aywpPpYiohUOCbGxLTonQSkcwef"
 
 # SIGNING — why each target repeats this instead of inheriting it
 #

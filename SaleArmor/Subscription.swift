@@ -20,6 +20,8 @@ final class Subscription: ObservableObject {
     /// inherited from the offering, because position on the paywall is doing real work.
     @Published private(set) var plans: [Plan] = []
     @Published private(set) var isWorking = false
+    /// Roughly what has been paid so far, for the return figure. Nil until the price is known.
+    @Published private(set) var paidSoFar: Double?
     @Published var problem: String?
 
     /// The entitlement configured in RevenueCat, matched by its **lookup key** — not its display
@@ -79,6 +81,8 @@ final class Subscription: ObservableObject {
             plans = packages
                 .sorted { rank[$0.packageType, default: 9] < rank[$1.packageType, default: 9] }
                 .map(Self.plan(from:))
+            // The paid estimate needs a price, which only exists once the offering has loaded.
+            await refresh()
         } catch {
             problem = "Couldn't load the prices. Check your connection."
         }
@@ -100,27 +104,29 @@ final class Subscription: ObservableObject {
             return formatter.string(from: NSNumber(value: amount)) ?? ""
         }
 
+        func plan(_ id: String, _ term: String, _ unit: String,
+                  badge: String? = nil, renews: Bool = true, periodDays: Double?) -> Plan {
+            Plan(id: id, term: term, price: product.localizedPriceString, unit: unit,
+                 badge: badge, renews: renews, package: package,
+                 productID: product.productIdentifier, amount: price.doubleValue,
+                 periodDays: periodDays)
+        }
+
         switch package.packageType {
         case .weekly:
-            return Plan(id: "weekly", term: "Every week", price: product.localizedPriceString,
-                        unit: "\(formatted(price.doubleValue / 7)) a day",
-                        badge: "POPULAR", renews: true, package: package)
+            return plan("weekly", "Every week", "\(formatted(price.doubleValue / 7)) a day",
+                        badge: "POPULAR", periodDays: 7)
         case .monthly:
-            return Plan(id: "monthly", term: "Every month", price: product.localizedPriceString,
-                        unit: "\(formatted(price.doubleValue / 4.33)) a week",
-                        badge: nil, renews: true, package: package)
+            return plan("monthly", "Every month", "\(formatted(price.doubleValue / 4.33)) a week",
+                        periodDays: 30.44)
         case .annual:
-            return Plan(id: "annual", term: "Every year", price: product.localizedPriceString,
-                        unit: "\(formatted(price.doubleValue / 12)) a month",
-                        badge: "BEST VALUE", renews: true, package: package)
+            return plan("annual", "Every year", "\(formatted(price.doubleValue / 12)) a month",
+                        badge: "BEST VALUE", periodDays: 365.25)
         case .lifetime:
-            return Plan(id: "lifetime", term: "Once, forever", price: product.localizedPriceString,
-                        unit: "No renewal, ever",
-                        badge: nil, renews: false, package: package)
+            return plan("lifetime", "Once, forever", "No renewal, ever",
+                        renews: false, periodDays: nil)
         default:
-            return Plan(id: package.identifier, term: product.localizedTitle,
-                        price: product.localizedPriceString, unit: "",
-                        badge: nil, renews: true, package: package)
+            return plan(package.identifier, product.localizedTitle, "", periodDays: nil)
         }
     }
 
@@ -154,8 +160,31 @@ final class Subscription: ObservableObject {
     }
 
     private func apply(_ info: CustomerInfo) {
-        isActive = info.entitlements[Self.entitlement]?.isActive == true
+        let entitlement = info.entitlements[Self.entitlement]
+        isActive = entitlement?.isActive == true
         UserDefaults.standard.set(isActive, forKey: Self.cacheKey)
+        paidSoFar = paid(for: entitlement)
         problem = nil
+    }
+
+    /// Roughly what this person has paid Sale Armor, for the return figure on the armed screen.
+    ///
+    /// Elapsed periods since the original purchase, times the price of the plan they are on. It is
+    /// an estimate and is treated as one: a lapse and resubscribe, or a plan switch, makes it read
+    /// high. That is the safe direction to be wrong in — **the return comes out understated, never
+    /// inflated** — and a number that flattered the app would be worth nothing to the person
+    /// reading it.
+    ///
+    /// Returns nil when the price is not known yet, and the panel simply does not appear.
+    private func paid(for entitlement: EntitlementInfo?) -> Double? {
+        guard let entitlement, entitlement.isActive,
+              let plan = plans.first(where: { $0.productID == entitlement.productIdentifier }),
+              let price = plan.amount else { return nil }
+        guard let start = entitlement.originalPurchaseDate else { return price }
+
+        guard let periodDays = plan.periodDays else { return price }   // lifetime: paid once
+        let days = Calendar.current.dateComponents([.day], from: start, to: Date()).day ?? 0
+        let periods = floor(Double(days) / periodDays) + 1             // first period paid up front
+        return periods * price
     }
 }

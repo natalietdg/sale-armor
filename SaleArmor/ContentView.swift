@@ -74,6 +74,7 @@ struct ContentView: View {
                     ArmedView(window: window,
                               shielding: controller.isShielding,
                               saved: controller.wishlist.saved,
+                              paid: subscription.paidSoFar,
                               onDisarm: { controller.disarm() })
                 } else {
                     ArmView(controller: controller)
@@ -371,6 +372,8 @@ private struct ArmedView: View {
     /// this is the screen you open to check the shield is up — and the number is the reason to keep
     /// it up.
     let saved: Double
+    /// Roughly what Sale Armor has cost so far. Nil while unknown, and the return stays hidden.
+    let paid: Double?
     let onDisarm: () -> Void
 
     var body: some View {
@@ -395,9 +398,16 @@ private struct ArmedView: View {
             if saved > 0 {
                 VStack(spacing: Px.unit) {
                     Text("Money that stayed yours").pxLabel(9).foregroundStyle(Px.dim)
-                    Text(saved.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")))
+                    Text(Self.money(saved))
                         .font(.px(26, .black)).foregroundStyle(Px.goldMetal)
                         .accessibilityIdentifier("armedSaved")
+                    // Only once it has actually paid for itself. Showing "0.4x" to someone who has
+                    // not turned anything down yet would be an argument against the app.
+                    if let paid, paid > 0, saved > paid {
+                        Text("\(Self.money(paid)) spent on Sale Armor · \(Self.multiple(saved / paid)) back")
+                            .font(.px(10)).foregroundStyle(Px.dim)
+                            .accessibilityIdentifier("armedReturn")
+                    }
                 }
             }
 
@@ -417,6 +427,15 @@ private struct ArmedView: View {
             Spacer()
             Text(value).font(.px(13, .black)).foregroundStyle(Px.ink)
         }
+    }
+
+    private static func money(_ amount: Double) -> String {
+        amount.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD"))
+    }
+
+    /// Whole multiples above ten: "43x" reads instantly where "43.2x" reads like a spreadsheet.
+    private static func multiple(_ ratio: Double) -> String {
+        ratio >= 10 ? "\(Int(ratio))x" : String(format: "%.1fx", ratio)
     }
 
     private static func whenText(_ pattern: ArmorPattern) -> String {
