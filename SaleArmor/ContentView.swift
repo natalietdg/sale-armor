@@ -130,6 +130,11 @@ private struct ArmView: View {
     @State private var selection = FamilyActivitySelection()
     @State private var picking = false
 
+    /// Bumped on arm, so `sensoryFeedback` has something to watch. Counters rather than booleans,
+    /// because arming twice in a row must feel twice.
+    @State private var armed = 0
+    @State private var chose = 0
+
     private static let kinds = ["Once", "Daily", "Days", "Dates", "N.N"]
     private static let dayLetters = ["S", "M", "T", "W", "T", "F", "S"]
 
@@ -183,6 +188,7 @@ private struct ArmView: View {
                                 .background(chosen == sale ? Px.goldMetal : Px.panel)
                             }
                             .accessibilityIdentifier("sale-\(sale.rawValue)")
+                            .simultaneousGesture(TapGesture().onEnded { chose += 1 })
                         }
                     }
                 }
@@ -207,6 +213,7 @@ private struct ArmView: View {
                 }
 
                 Button("Arm it") {
+                    armed += 1
                     controller.arm(name: chosen?.rawValue ?? "The guard",
                                    pattern: pattern, selection: selection)
                 }
@@ -222,6 +229,10 @@ private struct ArmView: View {
             }
         }
         .familyActivityPicker(isPresented: $picking, selection: $selection)
+        // Arming is the one act on this screen that changes what the phone does, so it lands like
+        // one. Picking a foe is a lighter tick — enough to confirm the tap without competing.
+        .sensoryFeedback(.success, trigger: armed)
+        .sensoryFeedback(.selection, trigger: chose)
     }
 
     private var appCount: Int {
@@ -376,6 +387,10 @@ private struct ArmedView: View {
     let paid: Double?
     let onDisarm: () -> Void
 
+    /// Standing down is a decision, not a mistake — a warning tone would scold. A soft impact
+    /// just confirms the shield is gone.
+    @State private var disarmed = 0
+
     var body: some View {
         VStack(spacing: Px.unit * 5) {
             Spacer()
@@ -411,7 +426,7 @@ private struct ArmedView: View {
                 }
             }
 
-            Button("Disarm") { onDisarm() }
+            Button("Disarm") { disarmed += 1; onDisarm() }
                 .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.alert))
                 .accessibilityIdentifier("disarm")
 
@@ -419,6 +434,7 @@ private struct ArmedView: View {
                 .font(.px(11)).foregroundStyle(Px.dim)
             Spacer()
         }
+        .sensoryFeedback(.impact(weight: .light), trigger: disarmed)
     }
 
     private func row(_ label: String, _ value: String) -> some View {

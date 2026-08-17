@@ -108,7 +108,13 @@ extension Font {
     ///
     /// Falls back to the system monospace if the font ever fails to load, so a missing file is a
     /// duller app rather than a blank one.
+    /// Pixelify Sans draws small for its point size — the glyphs sit low in the em box and the
+    /// counters are tight — so every size the app asks for is scaled up. On a 6.9-inch simulator
+    /// this was merely cosy; on a phone in a hand it was too small to read.
+    private static let pixelScale: CGFloat = 1.5
+
     static func px(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
+        let size = (size * pixelScale).rounded()
         // **One PostScript name, not one per weight.** Pixelify Sans is a variable font with a
         // single weight axis, so `PixelifySans-Bold` does not exist — asking for it returned nil
         // and every bold call in the app silently fell back to the system monospace. The weight is
