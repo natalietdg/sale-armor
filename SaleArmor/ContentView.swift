@@ -5,6 +5,7 @@ import FamilyControls
 struct ContentView: View {
     @StateObject private var controller = ArmorController()
     @StateObject private var subscription = Subscription()
+    @StateObject private var music = Music()
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = Demo.opensWishlist ? Tab.wishlist : Tab.guardTab
 
@@ -22,7 +23,10 @@ struct ContentView: View {
                 // free tier, so an unsubscribed person never reaches the app picker at all.
                 if subscription.isActive {
                     if controller.authorization == .approved {
-                        tabBar
+                        HStack(spacing: 0) {
+                            tabBar
+                            musicButton
+                        }
                         Divider().overlay(Px.line)
                     }
                     content
@@ -40,6 +44,7 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .task { controller.syncWithClock() }
         .onChange(of: scenePhase) { _, phase in
+            music.setActive(phase == .active)
             guard phase == .active else { return }
             controller.syncWithClock()
             // A subscription can lapse or be restored while the app is closed.
@@ -62,6 +67,24 @@ struct ContentView: View {
             }
         }
         .padding(.top, Px.unit * 2)
+    }
+
+    /// Two pixel bars for on, one for off. A speaker glyph would be the obvious choice and the
+    /// wrong one — every other mark in this app is drawn on the grid.
+    private var musicButton: some View {
+        Button { music.isOn.toggle() } label: {
+            HStack(spacing: Px.unit / 2) {
+                ForEach(0..<3, id: \.self) { i in
+                    Rectangle()
+                        .fill(music.isOn ? Px.goldMetal : Px.dim)
+                        .frame(width: Px.unit, height: Px.unit * CGFloat(music.isOn ? [2, 4, 3][i] : 1))
+                }
+            }
+            .frame(width: Px.unit * 11, height: Px.unit * 9)
+            .background(Px.bg)
+        }
+        .accessibilityLabel(music.isOn ? "Turn the music off" : "Turn the music on")
+        .accessibilityIdentifier("musicToggle")
     }
 
     @ViewBuilder
