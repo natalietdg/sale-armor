@@ -36,9 +36,16 @@ enum Px {
     static let silver     = Color(hex: 0xD3D8E6)
     static let ruby       = Color(hex: 0xD62F45)
     static let rubyLit    = Color(hex: 0xFF6B7E)
-    // The emeralds in the guard and pommel. Two tones, so a two-cell gem reads as faceted.
-    static let emerald    = Color(hex: 0x2E9E6B)
-    static let emeraldLit = Color(hex: 0x7BE8A8)
+    /// The emeralds in the crossguard. Jewel-tone rather than mint: a deep stone reads as set into
+    /// metal, where a bright one reads as painted onto it.
+    static let emerald    = Color(hex: 0x146B45)
+    static let emeraldLit = Color(hex: 0x2FA86E)
+
+    /// The shaded sides. One light source means every material needs one.
+    static let goldShade   = Color(hex: 0xB0862B)
+    static let silverShade = Color(hex: 0x8B93AD)
+    static let rubyShade   = Color(hex: 0x8E1C2C)
+    static let rubyGlint   = Color(hex: 0xFFFFFF)
     /// What a pixel turns into as the gleam passes over it. Two extra colours, not a gradient.
     static let goldShine  = Color(hex: 0xFFF3C4)
     static let silverShine = Color(hex: 0xFFFFFF)
@@ -282,8 +289,11 @@ struct PxDateField: View {
 /// The sword, drawn as a literal pixel grid, with light coming off it.
 ///
 /// Stored as rows of characters so the art is legible in source and editable without a tool:
-/// `#` is gold, `=` the silver core of the blade, `o` the ruby set into the hilt, `E`/`e` the
-/// emerald body and its lit facet, `.` empty.
+/// One light source, upper left, and every material gets a lit edge and an unlit one — that is
+/// the whole of what makes a flat grid read as three-dimensional.
+///
+/// `H` gold highlight, `#` gold, `+` gold shadow. `=` the blade's lit core, `w` its shaded side.
+/// `*` the ruby's white glint, `O` ruby, `o` ruby shadow. `E`/`e` emerald and its lit facet.
 /// Edit the art, not a PNG.
 ///
 /// A sword rather than a shield because a **vertical silhouette survives being small** — at 40pt
@@ -405,7 +415,12 @@ struct SwordSprite: View {
     private static func colour(_ ch: Character, gleaming: Bool, lit: Bool) -> Color {
         switch ch {
         case "=": gleaming ? Px.silverShine : Px.silver
-        case "o": lit ? Px.rubyLit : Px.ruby
+        case "w": gleaming ? Px.silver : Px.silverShade
+        case "H": Px.goldShine
+        case "+": Px.goldShade
+        case "*": Px.rubyGlint           // the white catchlight — a gem without one looks painted
+        case "O": lit ? Px.rubyLit : Px.ruby
+        case "o": Px.rubyShade
         case "E": lit ? Px.emeraldLit : Px.emerald
         case "e": Px.emeraldLit
         default:  gleaming ? Px.goldShine : Px.goldMetal
@@ -426,24 +441,24 @@ struct SwordSprite: View {
     private var fieldH: Int { glow ? 50 : 20 }
 
     private static let art: [[Character]] = [
-        ".....##.....",
-        ".....##.....",
-        "....#==#....",
-        "....#==#....",
-        "....#==#....",
-        "....#==#....",
-        "....#==#....",
-        "....#==#....",
-        "....#==#....",
-        "....#==#....",
-        "....#==#....",
-        "##eE#oo#Ee##",
-        "##EE#oo#EE##",
-        ".....##.....",
-        ".....##.....",
-        ".....##.....",
-        "....#eE#....",
-        "....#EE#...."
+        ".....H+.....",
+        ".....H+.....",
+        "....H=w+....",
+        "....H=w+....",
+        "....H=w+....",
+        "....H=w+....",
+        "....H=w+....",
+        "....H=w+....",
+        "....H=w+....",
+        "....H=w+....",
+        "....H=w+....",
+        "H#eEH*OHeE#+",
+        "++EE#Oo#EE++",
+        ".....H+.....",
+        ".....H+.....",
+        ".....H+.....",
+        "....H##+....",
+        "....#++#...."
     ].map(Array.init)
 
     /// Every filled cell of the sword, in **sprite** coordinates. The field origin is added when
