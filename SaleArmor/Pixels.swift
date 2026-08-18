@@ -36,6 +36,9 @@ enum Px {
     static let silver     = Color(hex: 0xD3D8E6)
     static let ruby       = Color(hex: 0xD62F45)
     static let rubyLit    = Color(hex: 0xFF6B7E)
+    // The emeralds in the guard and pommel. Two tones, so a two-cell gem reads as faceted.
+    static let emerald    = Color(hex: 0x2E9E6B)
+    static let emeraldLit = Color(hex: 0x7BE8A8)
     /// What a pixel turns into as the gleam passes over it. Two extra colours, not a gradient.
     static let goldShine  = Color(hex: 0xFFF3C4)
     static let silverShine = Color(hex: 0xFFFFFF)
@@ -279,7 +282,8 @@ struct PxDateField: View {
 /// The sword, drawn as a literal pixel grid, with light coming off it.
 ///
 /// Stored as rows of characters so the art is legible in source and editable without a tool:
-/// `#` is gold, `=` the silver core of the blade, `o` the ruby set into the hilt, `.` empty.
+/// `#` is gold, `=` the silver core of the blade, `o` the ruby set into the hilt, `E`/`e` the
+/// emerald body and its lit facet, `.` empty.
 /// Edit the art, not a PNG.
 ///
 /// A sword rather than a shield because a **vertical silhouette survives being small** — at 40pt
@@ -402,6 +406,8 @@ struct SwordSprite: View {
         switch ch {
         case "=": gleaming ? Px.silverShine : Px.silver
         case "o": lit ? Px.rubyLit : Px.ruby
+        case "E": lit ? Px.emeraldLit : Px.emerald
+        case "e": Px.emeraldLit
         default:  gleaming ? Px.goldShine : Px.goldMetal
         }
     }
@@ -414,10 +420,10 @@ struct SwordSprite: View {
     ///
     /// `glow: false` shrinks the field to the blade itself, for the small header sword where a
     /// halo three times its width would be absurd.
-    private var originX: Int { glow ? 21 : 1 }
-    private var originY: Int { glow ? 22 : 1 }
-    private var fieldW: Int { glow ? 55 : 14 }
-    private var fieldH: Int { glow ? 62 : 20 }
+    private var originX: Int { glow ? 16 : 1 }
+    private var originY: Int { glow ? 16 : 1 }
+    private var fieldW: Int { glow ? 44 : 14 }
+    private var fieldH: Int { glow ? 50 : 20 }
 
     private static let art: [[Character]] = [
         ".....##.....",
@@ -431,13 +437,13 @@ struct SwordSprite: View {
         "....#==#....",
         "....#==#....",
         "....#==#....",
-        "#####oo#####",
-        "#####oo#####",
+        "##eE#oo#Ee##",
+        "##EE#oo#EE##",
         ".....##.....",
         ".....##.....",
         ".....##.....",
-        "....####....",
-        "....####...."
+        "....#eE#....",
+        "....#EE#...."
     ].map(Array.init)
 
     /// Every filled cell of the sword, in **sprite** coordinates. The field origin is added when
@@ -458,8 +464,8 @@ struct SwordSprite: View {
     /// the cycle. A sprite sheet had no random number generator, and a repeating twinkle is what
     /// reads as animation rather than noise.
     private static let glitter: [(x: Int, y: Int, at: Int)] = [
-        (9, 14, 2), (47, 20, 11), (6, 35, 19), (49, 44, 27),
-        (12, 53, 34), (45, 56, 41), (28, 5, 47), (40, 9, 15)
+        (7, 11, 2), (38, 16, 11), (5, 28, 19), (39, 35, 27),
+        (10, 43, 34), (36, 45, 41), (22, 4, 47), (32, 7, 15)
     ]
 }
 
