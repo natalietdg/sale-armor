@@ -39,6 +39,7 @@ final class Subscription: ObservableObject {
 
     init() {
         isActive = (Demo.isOn && !Demo.showsPaywall)
+            || Demo.isUnlocked
             || UserDefaults.standard.bool(forKey: Self.cacheKey)
         if Demo.showsPaywall { plans = Self.samplePlans }
     }
@@ -76,6 +77,9 @@ final class Subscription: ObservableObject {
             return
         }
         if !Purchases.isConfigured {
+#if DEBUG
+            Purchases.logLevel = .verbose
+#endif
             Purchases.configure(withAPIKey: apiKey)
         }
         await refresh()
@@ -92,18 +96,38 @@ final class Subscription: ObservableObject {
         }
     }
 
+    /// Loads the offering, and says what went wrong when it does not.
+    ///
+    /// The previous version replaced every failure with "check your connection", which is a guess —
+    /// and usually the wrong one. A missing agreement, an unapproved product and a genuine network
+    /// failure all arrived as the same sentence, so the one piece of information that would have
+    /// identified the problem was discarded at the moment it was produced. Three separate outcomes
+    /// are now distinguished, because they need three different actions from whoever reads them.
     private func loadOffering() async {
         guard Purchases.isConfigured else { return }
         do {
-            let packages = try await Purchases.shared.offerings().current?.availablePackages ?? []
+            let offerings = try await Purchases.shared.offerings()
+            guard let current = offerings.current else {
+                // Reached RevenueCat, but no offering is marked current for this app.
+                problem = "No pricing is set up for this app yet."
+                return
+            }
+            let packages = current.availablePackages
+            guard !packages.isEmpty else {
+                // The offering exists and StoreKit returned nothing for it. This is what an
+                // unaccepted agreement or an unavailable product looks like — never a network fault.
+                problem = "The store returned no products. They may still be waiting on Apple."
+                return
+            }
             let rank: [PackageType: Int] = [.weekly: 0, .monthly: 1, .annual: 2, .lifetime: 3]
             plans = packages
                 .sorted { rank[$0.packageType, default: 9] < rank[$1.packageType, default: 9] }
                 .map(Self.plan(from:))
+            problem = nil
             // The paid estimate needs a price, which only exists once the offering has loaded.
             await refresh()
         } catch {
-            problem = "Couldn't load the prices. Check your connection."
+            problem = "Couldn't load the prices. \(error.localizedDescription)"
         }
     }
 

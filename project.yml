@@ -24,8 +24,9 @@ settings:
 #   CODE_SIGN_IDENTITY = "iPhone Developer"   pinned every build, archives included, to a
 #       development profile. Development profiles need a registered device, so archiving died
 #       with "your team has no devices" no matter how healthy the account was.
-#   TARGETED_DEVICE_FAMILY = "1,2"            claimed iPad support, and an iPad-capable app that
-#       declares portrait-only is rejected at upload for not supporting multitasking.
+#   TARGETED_DEVICE_FAMILY = "1,2"            claimed iPad support while the app declared
+#       portrait-only, which is rejected at upload for not supporting multitasking. iPad is now
+#       supported deliberately, with all four orientations declared for iPad below.
 #
 # Release signs manually against explicit App Store profiles ("SaleArmor AppStore" and
 # "SaleArmorMonitor AppStore"), created through the App Store Connect API because Xcode-managed
@@ -53,7 +54,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        TARGETED_DEVICE_FAMILY: "1"   # iPhone. Shielding is a phone habit, not an iPad one.
+        TARGETED_DEVICE_FAMILY: "1,2"   # iPhone and iPad. Screen Time exists on both.
       configs:
         Debug:
           CODE_SIGN_STYLE: Automatic
@@ -77,7 +78,7 @@ targets:
         RevenueCatAPIKey: $(REVENUECAT_API_KEY)
         CFBundleShortVersionString: "1.0"
         # Build 2 predates the paywall, the cooling-off vault and the reminders.
-        CFBundleVersion: "7"
+        CFBundleVersion: "20"
         # Pixelify Sans, SIL Open Font Licence — free for commercial use. Chosen over Press Start
         # 2P because the app has real sentences in it and Press Start is unreadable below ~14pt.
         UIAppFonts:
@@ -86,8 +87,17 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # iPad must offer all four or the upload is rejected for not supporting multitasking.
+        # The phone stays portrait-only; only the iPad rotates.
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     dependencies:
       - target: SaleArmorMonitor
+        embed: true
+      - target: SaleArmorShield
         embed: true
       # The extension never sells anything, so only the app links this.
       - package: RevenueCat
@@ -102,7 +112,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor.monitor
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
       configs:
         Debug:
           CODE_SIGN_STYLE: Automatic
@@ -123,22 +133,76 @@ targets:
         CFBundleDisplayName: Sale Armor Monitor
         CFBundleShortVersionString: "1.0"
         # Must match the host app exactly or the upload is rejected.
-        CFBundleVersion: "7"
+        CFBundleVersion: "20"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldMonitor
+
+
+  # WHAT A BLOCKED APP LOOKS LIKE.
+  #
+  # Separate from SaleArmorMonitor because Apple splits the job in two: the monitor decides *when*
+  # the shield is up, this decides what it *says*. Without this target iOS draws its own grey
+  # "Restricted" panel, which is correct and completely anonymous — the moment the product is
+  # supposed to be at its most recognisable is the moment it looks like a system error.
+  SaleArmorShield:
+    type: app-extension
+    platform: iOS
+    # Shared/ again: this process has to read the armed window out of the App Group to name it
+    # back to the user, and it draws the same sword sprite the app does.
+    sources:
+      - SaleArmorShield
+      - Shared
+      - path: SaleArmor/Fonts/PixelifySans.ttf
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor.shield
+        TARGETED_DEVICE_FAMILY: "1,2"
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "SaleArmorShield AppStore"
+    entitlements:
+      path: SaleArmorShield/SaleArmorShield.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.natalieleong.salearmor
+    info:
+      path: SaleArmorShield/Info.plist
+      properties:
+        CFBundleDisplayName: Sale Armor Shield
+        UIAppFonts:
+          - PixelifySans.ttf
+        CFBundleShortVersionString: "1.0"
+        # Must match the host app exactly or the upload is rejected.
+        CFBundleVersion: "20"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldConfig
 
   SaleArmorTests:
     type: bundle.unit-test
     platform: iOS
     # Shared/ only. The schedule and wishlist logic is deliberately free of UI and of
     # FamilyControls calls, so it can be tested without a device or a Screen Time grant.
-    sources: [SaleArmorTests, Shared]
+    # The font ships with the tests too, so the preview render exercises the same face the shield
+    # draws rather than silently falling back to the system font.
+    sources:
+      - SaleArmorTests
+      - Shared
+      - path: SaleArmor/Fonts/PixelifySans.ttf
+        buildPhase: resources
     settings:
       base:
         GENERATE_INFOPLIST_FILE: "YES"
         PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor.tests
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         # Tests never ship, so they never need a distribution identity.
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
@@ -161,3 +225,41 @@ schemes:
     # which needs a registered device. Distribution profiles do not.
     archive:
       config: Release
+
+  # A second scheme rather than arguments typed into the shared one.
+  #
+  # `-demo` skips the paywall, which is the only way to reach the app picker while the Paid Apps
+  # Agreement is still pending — with no agreement there are no products, and the gate in
+  # ContentView renders the paywall and nothing else. Kept separate so a normal Run still exercises
+  # the real purchase path; the flags are compiled out of Release regardless (see `enum Demo`).
+  # The whole app, real Screen Time, no paywall. This is the only way to see a blocked app
+  # while the store has no products to sell.
+  # The real App Store, from Xcode. The plain SaleArmor scheme points at SaleArmor.storekit, which
+  # serves local products and therefore cannot reproduce a store problem — this one has no
+  # configuration attached, so it hits Apple exactly as a TestFlight build does.
+  SaleArmor (Live Store):
+    build:
+      targets:
+        SaleArmor: [run]
+    run:
+      config: Debug
+
+  SaleArmor (Unlocked):
+    build:
+      targets:
+        SaleArmor: [run]
+    run:
+      config: Debug
+      commandLineArguments:
+        "-unlocked": true
+
+  SaleArmor (Demo):
+    build:
+      targets:
+        SaleArmor: [run]
+    run:
+      config: Debug
+      commandLineArguments:
+        "-demo": true
+      # No StoreKit configuration on purpose: -demo bypasses the store entirely, and pointing at
+      # both would make it ambiguous which one let you in.

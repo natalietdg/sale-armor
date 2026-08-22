@@ -141,6 +141,63 @@ private struct PermissionView: View {
 private struct ArmView: View {
     @ObservedObject var controller: ArmorController
 
+    @State private var mode: GuardMode = .standard
+    @State private var confirmingLock = false
+
+    /// Standard or locked, decided while calm.
+    ///
+    /// This sits at the end of the form on purpose. The question only means anything once you have
+    /// said which apps and which hours — "how serious is this one" is unanswerable before you know
+    /// what "this one" is.
+    private var modePicker: some View {
+        VStack(alignment: .leading, spacing: Px.unit * 2) {
+            modeOption(.standard, title: "Standard", line: "I just need friction.",
+                       detail: "You can disarm it whenever you like.")
+            modeOption(.locked, title: "Locked", line: "Don't let me negotiate with myself.",
+                       detail: "Sale Armor won't end this one early. Up to 3 days at a time.")
+        }
+    }
+
+    private func modeOption(_ value: GuardMode, title: String, line: String, detail: String) -> some View {
+        Button {
+            mode = value
+        } label: {
+            HStack(alignment: .top, spacing: Px.unit * 3) {
+                // Drawn, not typed. Pixelify Sans has no box-drawing glyphs, so ◼/◻ came out as
+                // the missing-character box — and a checkbox rendered as "?" reads as a bug in the
+                // one control whose whole job is to look decided.
+                Rectangle()
+                    .fill(mode == value ? Px.gold : Color.clear)
+                    .frame(width: Px.unit * 3, height: Px.unit * 3)
+                    .pxBevel(light: Px.line, shade: Px.line, inset: true)
+                    .padding(.top, Px.unit / 2)
+                VStack(alignment: .leading, spacing: Px.unit) {
+                    HStack(spacing: Px.unit) {
+                        if value == .locked { Text("🔒").font(.px(11)) }
+                        Text(title.uppercased()).font(.px(12, .black))
+                            .foregroundStyle(mode == value ? Px.gold : Px.ink)
+                    }
+                    Text(line).font(.px(12)).foregroundStyle(Px.ink)
+                    Text(detail).font(.px(10)).foregroundStyle(Px.dim)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Px.unit * 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(mode == value ? Px.panel : Color.clear)
+            .pxBevel(light: mode == value ? Px.panelLit : Px.line,
+                     shade: mode == value ? Px.panelShade : Px.line, inset: mode != value)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("mode-\(value.rawValue)")
+    }
+
+    private func armNow() {
+        armed += 1
+        controller.arm(name: chosen?.rawValue ?? "The guard",
+                       pattern: pattern, selection: selection, mode: mode)
+    }
+
     @State private var name = ""
     @State private var chosen: SaleKind?
     @State private var kind = 1                      // Every day, the commonest case
@@ -158,15 +215,24 @@ private struct ArmView: View {
     @State private var armed = 0
     @State private var chose = 0
 
-    private static let kinds = ["Once", "Daily", "Days", "Dates", "N.N"]
+    private static let kinds = ["Now", "Once", "Daily", "Days", "Dates", "N.N"]
     private static let dayLetters = ["S", "M", "T", "W", "T", "F", "S"]
+
+    /// How long "now" lasts, in hours. Three choices, not a slider: this is chosen in the ninety
+    /// seconds before you would have opened a shopping app, and a slider is a decision.
+    private static let nowOptions: [(String, Int)] = [("3 hours", 3), ("Tonight", 8), ("24 hours", 24)]
+    @State private var nowHours = 3
 
     private var pattern: ArmorPattern {
         switch kind {
-        case 0:  .dateRange(start: start, end: end)
-        case 2:  .weekly(weekdays: weekdays, from: from, to: to)
-        case 3:  .monthly(days: monthDays)
-        case 4:  .doubleDates
+        // A window that has already started. `syncWithClock` raises the shield the moment this is
+        // armed, so the apps shut immediately rather than at the next scheduled edge.
+        case 0:  .dateRange(start: Date().addingTimeInterval(-60),
+                            end: Date().addingTimeInterval(TimeInterval(nowHours) * 3600))
+        case 1:  .dateRange(start: start, end: end)
+        case 3:  .weekly(weekdays: weekdays, from: from, to: to)
+        case 4:  .monthly(days: monthDays)
+        case 5:  .doubleDates
         default: .daily(from: from, to: to)
         }
     }
@@ -235,13 +301,21 @@ private struct ArmView: View {
                     }
                 }
 
-                Button("Arm it") {
-                    armed += 1
-                    controller.arm(name: chosen?.rawValue ?? "The guard",
-                                   pattern: pattern, selection: selection)
+                field("How serious is this one") { modePicker }
+
+                Button(mode == .locked ? "Lock it" : "Arm it") {
+                    // Locking is the one action in this app with no undo, so it is the one action
+                    // that asks twice. Everything else is reversible and asks nothing.
+                    if mode == .locked { confirmingLock = true } else { armNow() }
                 }
                 .buttonStyle(PxButtonStyle())
                 .accessibilityIdentifier("armIt")
+                .alert("Lock yourself out?", isPresented: $confirmingLock) {
+                    Button("I know what I'm like") { armNow() }
+                    Button("Not yet", role: .cancel) { }
+                } message: {
+                    Text("You won't be able to end this guard once it starts. It stands down on its own when the window is over.")
+                }
 
                 if let problem = controller.problem {
                     Text(problem).font(.px(11)).foregroundStyle(Px.alert)
@@ -302,12 +376,31 @@ private struct ArmView: View {
         switch kind {
         case 0:
             VStack(alignment: .leading, spacing: Px.unit * 3) {
+                Text("Shut them for").pxLabel(9).foregroundStyle(Px.dim)
+                HStack(spacing: Px.unit) {
+                    ForEach(Self.nowOptions, id: \.1) { label, hours in
+                        Button { nowHours = hours } label: {
+                            Text(label.uppercased())
+                                .font(.px(11, .black)).tracking(0.6)
+                                .foregroundStyle(nowHours == hours ? Px.bg : Px.dim)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, Px.unit * 2)
+                                .background(nowHours == hours ? Px.goldMetal : Px.panel)
+                        }
+                        .accessibilityIdentifier("now\(hours)")
+                    }
+                }
+                Text("Starts the second you arm it.")
+                    .font(.px(10)).foregroundStyle(Px.dim)
+            }
+        case 1:
+            VStack(alignment: .leading, spacing: Px.unit * 3) {
                 Text("From").pxLabel(9).foregroundStyle(Px.dim)
                 PxDateField(date: $start)
                 Text("Until").pxLabel(9).foregroundStyle(Px.dim)
                 PxDateField(date: $end, notBefore: start)
             }
-        case 2:
+        case 3:
             HStack(spacing: Px.unit) {
                 ForEach(1...7, id: \.self) { day in
                     Button {
@@ -323,7 +416,7 @@ private struct ArmView: View {
                 }
             }
             timeRow
-        case 3:
+        case 4:
             // A month grid. 31 always shown — a month without one simply never fires.
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Px.unit), count: 7),
                       spacing: Px.unit) {
@@ -339,7 +432,7 @@ private struct ArmView: View {
                     }
                 }
             }
-        case 4:
+        case 5:
             Text("Every 1.1, 2.2, 3.3 … 11.11 and 12.12. Twelve sales a year, all day.")
                 .font(.px(11)).foregroundStyle(Px.dim)
         default:
@@ -364,6 +457,8 @@ private struct ArmView: View {
                     .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.ink))
                 Text(clock.wrappedValue.text)
                     .font(.px(15, .black)).foregroundStyle(Px.ink)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .frame(minWidth: Px.unit * 14)
                 Button("+") { clock.wrappedValue.hour = (clock.wrappedValue.hour + 1) % 24 }
                     .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.ink))
@@ -400,6 +495,17 @@ private struct ArmView: View {
 // MARK: - armed
 
 private struct ArmedView: View {
+    @State private var card: Image?
+
+    /// What gets shared. Deliberately about the commitment rather than about the shopping — the
+    /// version that names what you nearly bought is the version nobody sends.
+    static func brag(_ window: ArmorWindow) -> String {
+        let what = window.name.isEmpty ? "my shopping apps" : window.name.uppercased()
+        return window.mode == .locked
+            ? "I've locked \(what) with Sale Armor and I can't turn it off until it ends. ⚔️"
+            : "\(what) is armed — my shopping apps are shut. ⚔️"
+    }
+
     let window: ArmorWindow
     let shielding: Bool
     /// What the guard has been worth so far. Shown here rather than only on the wishlist, because
@@ -419,11 +525,24 @@ private struct ArmedView: View {
             Spacer()
             SwordSprite(lit: shielding).frame(width: 340)
 
-            Text(shielding ? "On guard" : "Armed")
+            // "Armed" and "On guard" are one word apart and the difference is the entire product:
+            // one means the apps are shut right now, the other means they will be, later. Read
+            // quickly, "Armed / waiting for the next window" looks exactly like protection, and the
+            // apps opening then reads as the app being broken. So the inactive state now says so
+            // outright, and says when it changes.
+            Text(shielding ? "On guard" : "Not yet")
                 .font(.px(28, .black)).tracking(3)
                 .foregroundStyle(shielding ? Px.armor : Px.gold)
 
-            Text(window.name.uppercased()).pxLabel(13).foregroundStyle(Px.ink)
+            HStack(spacing: Px.unit * 2) {
+                Text(window.name.uppercased()).pxLabel(13).foregroundStyle(Px.ink)
+                if window.mode == .locked {
+                    Text("🔒 LOCKED").font(.px(9, .black)).tracking(0.6)
+                        .foregroundStyle(Px.gold)
+                        .padding(.horizontal, Px.unit).padding(.vertical, Px.unit / 2)
+                        .background(Px.bg.opacity(0.75))
+                }
+            }
 
             PxPanel {
                 VStack(alignment: .leading, spacing: Px.unit * 3) {
@@ -449,11 +568,48 @@ private struct ArmedView: View {
                 }
             }
 
-            Button("Disarm") { disarmed += 1; onDisarm() }
+            // Sharing is the one social mechanism that survives this app's architecture, and it is
+            // offered here rather than at the moment of folding — you press this while calm and
+            // rather pleased with yourself, never at 1:47am. iOS owns the sheet, so Sale Armor
+            // never learns who it went to and no contact ever touches the app.
+            // An image, not a line of text. A picture is what actually gets posted, and the card
+            // carries the same sword the shield does so the two read as one object.
+            ShareLink(item: card ?? Image(systemName: "shield"),
+                      message: Text(Self.brag(window)),
+                      preview: SharePreview("Sale Armor", image: card ?? Image(systemName: "shield"))) {
+                Text(window.mode == .locked ? "Tell someone I'm locked out" : "Tell someone")
+                    .font(.px(12, .black)).foregroundStyle(Px.gold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Px.unit * 3)
+                    .pxBevel(light: Px.line, shade: Px.line, inset: true)
+            }
+            .accessibilityIdentifier("tellSomeone")
+            .disabled(card == nil)
+            .task(id: window) {
+                card = Image(uiImage: ShareCard.image(window: window, saved: saved,
+                                                      currency: Self.currencySymbol))
+            }
+
+            if window.mode == .locked, !window.canDisarm() {
+                // No disabled button. A greyed-out control invites tapping it repeatedly to find
+                // out why; this states the decision instead, in the words it was made in.
+                VStack(spacing: Px.unit) {
+                    Text("🔒 LOCKED").font(.px(12, .black)).foregroundStyle(Px.gold)
+                    Text("You asked not to be able to end this one early.")
+                        .font(.px(10)).foregroundStyle(Px.dim)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Px.unit * 3)
+                .accessibilityIdentifier("lockedNotice")
+            } else {
+                Button("Disarm") { disarmed += 1; onDisarm() }
                 .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.alert))
                 .accessibilityIdentifier("disarm")
+            }
 
-            Text(shielding ? "Nothing to do. Close this." : "Waiting for the next window.")
+            Text(shielding ? "Nothing to do. Close this."
+                           : "Your apps are open right now. \(Self.startsText(window.pattern))")
                 .font(.px(11)).foregroundStyle(Px.dim)
             Spacer()
         }
@@ -468,8 +624,25 @@ private struct ArmedView: View {
         }
     }
 
+    /// When the shield next goes up, in the words the user set it in.
+    static func startsText(_ pattern: ArmorPattern) -> String {
+        switch pattern {
+        case let .daily(from, _):     return "This guard shuts them at \(from.text)."
+        case let .weekly(_, from, _): return "This guard shuts them at \(from.text) on the days you picked."
+        case .monthly:                return "This guard shuts them on the dates you picked."
+        case .doubleDates:            return "This guard shuts them on the next double-date sale."
+        case .dateRange:              return "This guard shuts them when the dates you picked begin."
+        }
+    }
+
     private static func money(_ amount: Double) -> String {
         amount.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD"))
+    }
+
+    /// Just the symbol, for the share card — which draws its own number in the pixel font and only
+    /// needs to know what to put in front of it.
+    static var currencySymbol: String {
+        (Locale.current.currencySymbol ?? "$") + " "
     }
 
     /// Whole multiples above ten: "43x" reads instantly where "43.2x" reads like a spreadsheet.
@@ -502,6 +675,9 @@ private struct WishlistView: View {
     @State private var price = ""
 
     var body: some View {
+        // The price field opens a decimal pad, which has no return key — so the keyboard stays up
+        // and sits over the Park It button directly beneath it. Dragging the list now puts it away,
+        // which is the gesture people already try when a keyboard is in the way.
         ScrollView {
             VStack(alignment: .leading, spacing: Px.unit * 5) {
                 defendedPanel
@@ -536,6 +712,7 @@ private struct WishlistView: View {
                 }
             }
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     /// The whole point of the feature: money that stayed yours.

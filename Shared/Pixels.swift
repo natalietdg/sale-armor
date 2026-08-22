@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// **The 8-bit look, in one file.**
 ///
@@ -42,6 +43,10 @@ enum Px {
     static let emeraldLit = Color(hex: 0x2FA86E)
 
     /// The shaded sides. One light source means every material needs one.
+    /// Panel edges. A surface needs both or it is a rectangle with a line on it.
+    static let panelLit   = Color(hex: 0x34344F)
+    static let panelShade = Color(hex: 0x0A0A12)
+
     static let goldShade   = Color(hex: 0xB0862B)
     static let silverShade = Color(hex: 0x8B93AD)
     static let rubyShade   = Color(hex: 0x8E1C2C)
@@ -189,14 +194,70 @@ struct PxPanel<Content: View>: View {
             .padding(Px.unit * 4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(fill)
-            .overlay(Rectangle().strokeBorder(stroke, lineWidth: Px.unit / 2))
-            .overlay(alignment: .topLeading) {
-                // the highlight edge, two pixels in — a tile-engine bevel
-                Rectangle().fill(stroke.opacity(0.35))
-                    .frame(height: Px.unit / 2)
-                    .padding(.horizontal, Px.unit / 2)
-                    .padding(.top, Px.unit / 2)
-            }
+            .pxBevel(light: Px.panelLit, shade: Px.panelShade)
+    }
+}
+
+
+/// A one-unit bevel, lit from the upper left.
+///
+/// The sword reads as three-dimensional because every material has a lit edge and an unlit one and
+/// they all agree about where the light is. This is the same rule for flat interface surfaces:
+/// a bright line along the top and left, a dark line along the bottom and right. It is the oldest
+/// trick in interface drawing — every 8-bit menu and every Win95 button is exactly this — and it
+/// costs two rectangles.
+///
+/// `inset` inverts the light, which is what a pressed control does: a thing pushed in is lit from
+/// below. That, and nothing else, is why a pressed button looks pressed.
+struct PxBevel: ViewModifier {
+    var light: Color
+    var shade: Color
+    var inset: Bool = false
+
+    private func edge(_ colour: Color) -> some View {
+        Rectangle().fill(colour).allowsHitTesting(false)
+    }
+
+    func body(content: Content) -> some View {
+        let top = inset ? shade : light
+        let bottom = inset ? light : shade
+        // `allowsHitTesting(false)` on all four, and it is not optional. These are lit and shaded
+        // edges — decoration — but an overlay is hit-testable by default, so without this they sit
+        // in front of whatever they are decorating and eat taps along every panel and button edge.
+        // A tap that lands a few points inside the border of a button simply does nothing, which
+        // is indistinguishable from the button being broken.
+        return content
+            .overlay(alignment: .top)     { edge(top).frame(height: Px.unit / 2) }
+            .overlay(alignment: .leading)  { edge(top).frame(width: Px.unit / 2) }
+            .overlay(alignment: .bottom)  { edge(bottom).frame(height: Px.unit / 2) }
+            .overlay(alignment: .trailing) { edge(bottom).frame(width: Px.unit / 2) }
+    }
+}
+
+extension Color {
+    /// Mixes toward another colour, so a button's lit edge comes from its own tint instead of a
+    /// hardcoded highlight per button colour.
+    func blend(over other: Color, amount: Double = 0.45) -> Color {
+        Color(uiColor: UIColor(self).blended(with: UIColor(other), amount: amount))
+    }
+}
+
+private extension UIColor {
+    func blended(with other: UIColor, amount: CGFloat) -> UIColor {
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+        return UIColor(red: r1 + (r2 - r1) * amount,
+                       green: g1 + (g2 - g1) * amount,
+                       blue: b1 + (b2 - b1) * amount,
+                       alpha: 1)
+    }
+}
+
+extension View {
+    func pxBevel(light: Color, shade: Color, inset: Bool = false) -> some View {
+        modifier(PxBevel(light: light, shade: shade, inset: inset))
     }
 }
 
@@ -223,7 +284,8 @@ struct PxButtonStyle: ButtonStyle {
             .padding(.vertical, Px.unit * 3)
             .frame(maxWidth: .infinity)
             .background(tint)
-            .overlay(Rectangle().strokeBorder(Px.bg.opacity(0.35), lineWidth: Px.unit / 2))
+            .pxBevel(light: tint.opacity(0.55).blend(over: Px.silverShine),
+                     shade: Px.bg.opacity(0.42), inset: down)
             // the "shadow" is a solid offset block, the only kind an 8-bit renderer had
             .background(
                 Rectangle().fill(tint.opacity(0.45))
@@ -262,6 +324,8 @@ struct PxDateField: View {
                     .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.ink))
                 Text(text(format))
                     .font(.px(14, .black)).foregroundStyle(Px.ink)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .frame(minWidth: Px.unit * 11)
                 Button("+") { step(component, 1) }
                     .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.ink))
@@ -366,17 +430,29 @@ struct SwordSprite: View {
 
     // MARK: timing
 
-    /// The classic 4×4 ordered-dither threshold matrix. Values spread 0–1 so that as intensity
-    /// rises, cells switch on in a fixed scattered order rather than in rings.
+    /// The 8×8 ordered-dither threshold matrix.
+    ///
+    /// This was 4×4, and 4×4 is why the glow looked patchy. Sixteen thresholds means the blend
+    /// between two adjacent shades of the ramp can only be made in sixteenths, so a region whose
+    /// true brightness sits between two shades gets a coarse checker — and where the lower shade
+    /// is "nothing at all", that checker is a hole. At the scale this glow is drawn, a repeating
+    /// 4×4 cell is large enough to read as a blotch rather than as a texture.
+    ///
+    /// 8×8 gives sixty-four thresholds. The same fade now has four times the gradation and the
+    /// repeating unit is small enough to disappear, which is the entire job of a dither.
     private static let bayerMatrix: [[Double]] = [
-        [ 0,  8,  2, 10],
-        [12,  4, 14,  6],
-        [ 3, 11,  1,  9],
-        [15,  7, 13,  5]
-    ].map { $0.map { ($0 + 0.5) / 16 } }
+        [ 0, 32,  8, 40,  2, 34, 10, 42],
+        [48, 16, 56, 24, 50, 18, 58, 26],
+        [12, 44,  4, 36, 14, 46,  6, 38],
+        [60, 28, 52, 20, 62, 30, 54, 22],
+        [ 3, 35, 11, 43,  1, 33,  9, 41],
+        [51, 19, 59, 27, 49, 17, 57, 25],
+        [15, 47,  7, 39, 13, 45,  5, 37],
+        [63, 31, 55, 23, 61, 29, 53, 21]
+    ].map { $0.map { ($0 + 0.5) / 64 } }
 
     static func bayer(_ x: Int, _ y: Int) -> Double {
-        bayerMatrix[y % 4][x % 4]
+        bayerMatrix[y % 8][x % 8]
     }
 
     /// On guard, the flare comes round faster. The sword is doing something, and it says so.
@@ -412,7 +488,7 @@ struct SwordSprite: View {
         return d < 3
     }
 
-    private static func colour(_ ch: Character, gleaming: Bool, lit: Bool) -> Color {
+    static func colour(_ ch: Character, gleaming: Bool, lit: Bool) -> Color {
         switch ch {
         case "=": gleaming ? Px.silverShine : Px.silver
         case "w": gleaming ? Px.silver : Px.silverShade
@@ -440,7 +516,7 @@ struct SwordSprite: View {
     private var fieldW: Int { glow ? 44 : 14 }
     private var fieldH: Int { glow ? 50 : 20 }
 
-    private static let art: [[Character]] = [
+    static let art: [[Character]] = [
         ".....H+.....",
         ".....H+.....",
         "....H=w+....",
@@ -558,5 +634,324 @@ private struct GlowLayer: View, Equatable {
             }
         }
         .drawingGroup()   // rasterise once per step, then composite on the GPU
+    }
+}
+
+/// The sword as a plain image, drawn with Core Graphics.
+///
+/// **Why not `ImageRenderer`.** The shield extension needs this sprite, and it runs inside a
+/// sandboxed XPC service whose data-source callbacks are not guaranteed to be on the main actor.
+/// `ImageRenderer` is main-actor isolated, so reaching it from there meant `MainActor.assumeIsolated`
+/// — which does not check, it *asserts*. Off the main thread that is a trap, a trap is a crash, and
+/// a shield extension that crashes is not reported anywhere: iOS quietly draws its own default
+/// screen instead. The symptom is a missing feature with no error attached to it.
+///
+/// `UIGraphicsImageRenderer` has no actor requirement, so this is callable from anywhere. It also
+/// draws from the same `art` grid and the same palette as the animated view, which is the property
+/// that mattered about `ImageRenderer` in the first place.
+
+/// The shield screen's artwork, composed into a single bitmap.
+///
+/// **Why everything is one image.** `ShieldConfiguration` exposes a flat `backgroundColor`, a
+/// `UIImage` icon, and labels that carry a string and a colour and nothing else — no font, no
+/// background image, no layout. So the wall, the glow, the sword and the word ARMED cannot be
+/// separate elements the way they are in the app. Either they are painted together into the one
+/// bitmap the API accepts, or the screen is a system font on a flat colour.
+///
+/// The subtitle stays a real label: it changes with the armed window, and text baked into a bitmap
+/// cannot be read by VoiceOver. The headline is baked because it never changes and because it is
+/// the word the whole screen is for.
+enum ShieldArt {
+
+    /// Only exists so `Bundle(for:)` can find the bundle this code was compiled into.
+    private final class BundleToken {}
+
+    /// Bricks, glow, sword and headline, at the proportions the shield draws an icon.
+    static func panel(width: CGFloat = 380, height: CGFloat = 380) -> UIImage {
+        // The wall goes back inside the icon, because iOS discards `backgroundColor` on this screen
+        // entirely — a screenshot of the shipped shield measured #222224 at every corner while the
+        // colour passed was #0F0F1B. A pattern colour is discarded for the same reason a flat one
+        // is. The icon is the only surface this extension actually controls, so everything the
+        // screen shows of Sale Armor has to be painted into it.
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        format.scale = 3
+
+        return UIGraphicsImageRenderer(size: CGSize(width: width, height: height),
+                                       format: format).image { ctx in
+            let cg = ctx.cgContext
+            UIColor(Px.bg).setFill()
+            cg.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            wall(cg, width, height)
+            halo(cg, width, height)
+            blade(cg, width, height, centreY: 0.5, fill: 0.78)
+            headline(cg, width, height)
+        }
+    }
+
+    /// The app's wall, at the app's own brick size relative to this bitmap.
+    static func wall(_ cg: CGContext, _ w: CGFloat, _ h: CGFloat) {
+        let bw = Px.unit * 8, bh = Px.unit * 3, mortar = Px.unit / 2
+        for row in 0...Int(h / bh) + 1 {
+            let shift = row % 2 == 0 ? 0 : bw / 2
+            for col in -1...Int(w / bw) + 1 {
+                let odd = (row &* 7 &+ col &* 13) % 9 == 0
+                UIColor(odd ? Px.brickOdd : Px.brick).setFill()
+                cg.fill(CGRect(x: CGFloat(col) * bw + shift + mortar, y: CGFloat(row) * bh + mortar,
+                               width: bw - mortar, height: bh - mortar))
+            }
+        }
+    }
+
+    /// The dithered halo, on the same 8×8 threshold matrix the animated version uses, drawn at its
+    /// brightest frame. A still image cannot pulse, so it takes the top of the flare rather than an
+    /// average — a glow caught mid-fade just looks dim.
+    static func halo(_ cg: CGContext, _ w: CGFloat, _ h: CGFloat, centreY: Double = 0.46) {
+        let cell: CGFloat = 8
+        let cols = Int(w / cell), rows = Int(h / cell)
+        let cx = Double(cols - 1) / 2, cy = Double(rows - 1) * centreY
+        let maxR = Double(cols) / 2.6
+
+        for gy in 0..<rows {
+            for gx in 0..<cols {
+                let dx = Double(gx) - cx, dy = (Double(gy) - cy) * 0.92
+                let d = (dx * dx + dy * dy).squareRoot() / maxR
+                guard d < 1 else { continue }
+
+                let core = 0.14
+                let t = max(0, (d - core) / (1 - core))
+                let intensity = min(0.78, pow(1 - t, 1.05)) * 1.35
+                let level = intensity * Double(Px.glowRamp.count)
+                let base = Int(level)
+                let index = (level - Double(base)) > SwordSprite.bayer(gx, gy) ? base + 1 : base
+                guard index > 0 else { continue }
+
+                UIColor(Px.glowRamp[min(index - 1, Px.glowRamp.count - 1)]).setFill()
+                cg.fill(CGRect(x: CGFloat(gx) * cell, y: CGFloat(gy) * cell,
+                               width: cell, height: cell))
+            }
+        }
+    }
+
+    /// ARMED, in the app's own face.
+    ///
+    /// `ShieldConfiguration.Label` carries a string and a colour and no font, so the only way to
+    /// set this word in Pixelify Sans is to draw it into the bitmap and leave the real title nil.
+    /// Only the headline is treated this way: the subtitle changes with the armed window and stays
+    /// a proper label, because text painted into an image cannot be read aloud by VoiceOver.
+    private static func headline(_ cg: CGContext, _ w: CGFloat, _ h: CGFloat) {
+        let text = "ARMED."
+        let font = pixelFont(52)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: UIColor(Px.gold),
+            .kern: 2
+        ]
+        let size = (text as NSString).size(withAttributes: attributes)
+        (text as NSString).draw(at: CGPoint(x: (w - size.width) / 2, y: h - size.height - 18),
+                                withAttributes: attributes)
+    }
+
+    /// Pixelify Sans, registered from this bundle rather than assumed to be present.
+    ///
+    /// Two traps sit here. The face is a **variable** font whose only named instance is Regular, so
+    /// asking for "PixelifySans-Bold" returns nil and UIKit substitutes the system font without
+    /// saying so — the failure looks like "the font didn't apply". And `UIAppFonts` registers fonts
+    /// for the bundle that declares it, so a font that works in the app is simply absent in an
+    /// extension or a test bundle. Registering explicitly removes both, and the weight comes from
+    /// the variable axis afterwards.
+    private static let pixelFontRegistered: Bool = {
+        for bundle in [Bundle(for: BundleToken.self), Bundle.main] {
+            guard let url = bundle.url(forResource: "PixelifySans", withExtension: "ttf"),
+                  let data = try? Data(contentsOf: url),
+                  let provider = CGDataProvider(data: data as CFData),
+                  let font = CGFont(provider) else { continue }
+            var error: Unmanaged<CFError>?
+            if CTFontManagerRegisterGraphicsFont(font, &error) { return true }
+            // Already registered by UIAppFonts is a success, not a failure.
+            if let code = error?.takeUnretainedValue(), CFErrorGetCode(code) == 105 { return true }
+        }
+        return false
+    }()
+
+    /// The same weight the app draws, not merely the same family.
+    ///
+    /// `Font.px` asks SwiftUI for `.weight(.bold)`, and on a variable font that drives the `wght`
+    /// axis. The UIKit equivalent — a weight *trait* on the descriptor — does not: it picks or
+    /// synthesises a face instead, which is why the shield's ARMED came out in visibly different
+    /// letterforms from every other pixel word in the app. Setting the axis explicitly is what
+    /// makes the two identical.
+    static func pixelFont(_ size: CGFloat) -> UIFont {
+        _ = pixelFontRegistered
+        guard UIFont(name: "PixelifySans-Regular", size: size) != nil else {
+            return .systemFont(ofSize: size, weight: .black)
+        }
+        let wght = 2_003_265_652   // the four-character axis tag 'wght'
+        let descriptor = UIFontDescriptor(fontAttributes: [
+            .name: "PixelifySans-Regular",
+            kCTFontVariationAttribute as UIFontDescriptor.AttributeName: [wght: 700]
+        ])
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    /// The wall, as a tile that can be used as a pattern colour.
+    ///
+    /// **This is how the shield gets a background at all.** `ShieldConfiguration.backgroundColor`
+    /// takes a `UIColor`, and a `UIColor` can be a *pattern* — so a seamlessly tiling brick image
+    /// becomes a full-screen wall rather than a flat fill. Without it the wall could only ever be
+    /// the small square the system allots the icon.
+    ///
+    /// The tile is one brick wide and two courses tall, with the second course offset by half a
+    /// brick, which is exactly the repeat unit of a running bond. The app's one-in-nine shade
+    /// variation is left out here: in a tile it would repeat on a grid and read as a pattern
+    /// rather than as masonry.
+    static func wallTile() -> UIImage {
+        // Exactly the app's brick, not a bigger one. `PxBricks` uses Px.unit * 8 by Px.unit * 3
+        // with a half-unit mortar; at Px.unit = 4 that is 32 by 12 points. The first version of
+        // this tile was 64 by 24 — double — and a pattern colour tiles at the image's *point* size,
+        // so the shield's wall came out at twice the scale of the wall in the app it interrupts.
+        let bw = Px.unit * 8, bh = Px.unit * 3, mortar = Px.unit / 2
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        format.scale = 3
+
+        return UIGraphicsImageRenderer(size: CGSize(width: bw, height: bh * 2),
+                                       format: format).image { ctx in
+            let cg = ctx.cgContext
+            UIColor(Px.bg).setFill()
+            cg.fill(CGRect(x: 0, y: 0, width: bw, height: bh * 2))
+            UIColor(Px.brick).setFill()
+
+            // Course one, flush. Course two, offset by half a brick and drawn three times so the
+            // halves at either edge meet their partners when the tile repeats.
+            cg.fill(CGRect(x: mortar, y: mortar, width: bw - mortar, height: bh - mortar))
+            for dx in [-bw / 2, bw / 2] {
+                cg.fill(CGRect(x: dx + mortar, y: bh + mortar, width: bw - mortar, height: bh - mortar))
+            }
+        }
+    }
+
+    /// The sprite, centred, at the largest whole-pixel size that fits the panel. Whole pixels
+    /// matter more here than filling the space: a fractional size is what turns pixel art to mush.
+    static func blade(_ cg: CGContext, _ w: CGFloat, _ h: CGFloat,
+                      centreY: Double = 0.5, fill: CGFloat = 0.78) {
+        let rows = SwordSprite.art
+        let unit = floor(min(w / CGFloat(rows[0].count) * fill, h / CGFloat(rows.count) * fill))
+        let originX = (w - CGFloat(rows[0].count) * unit) / 2
+        let originY = h * CGFloat(centreY) - CGFloat(rows.count) * unit / 2
+
+        for (y, row) in rows.enumerated() {
+            for (x, ch) in row.enumerated() where ch != "." {
+                UIColor(SwordSprite.colour(ch, gleaming: false, lit: false)).setFill()
+                cg.fill(CGRect(x: originX + CGFloat(x) * unit, y: originY + CGFloat(y) * unit,
+                               width: unit, height: unit))
+            }
+        }
+    }
+}
+
+extension SwordSprite {
+    static func image(pixel: CGFloat = 8, padding: CGFloat = 6, lit: Bool = false) -> UIImage {
+        let rows = art
+        let w = CGFloat(rows[0].count) * pixel + padding * 2
+        let h = CGFloat(rows.count) * pixel + padding * 2
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = false
+        format.scale = 3          // whole squares: a fractional scale is the only way to blur this
+
+        return UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format).image { ctx in
+            for (y, row) in rows.enumerated() {
+                for (x, ch) in row.enumerated() where ch != "." {
+                    UIColor(colour(ch, gleaming: false, lit: lit)).setFill()
+                    ctx.fill(CGRect(x: padding + CGFloat(x) * pixel,
+                                    y: padding + CGFloat(y) * pixel,
+                                    width: pixel, height: pixel))
+                }
+            }
+        }
+    }
+}
+
+/// A shareable card, drawn rather than typed.
+///
+/// **What it deliberately cannot say.** It never names an app. iOS gives this app opaque
+/// `ApplicationToken` values and no way to resolve them, so "which apps you tried to open" does not
+/// exist anywhere in the system for us to put on a card — and the privacy claim on the website and
+/// in the App Store listing rests on exactly that. What it can show is the part that is ours: the
+/// guard, when it ends, and what has stayed in the account.
+enum ShareCard {
+
+    /// The card, as an image rather than a file.
+    ///
+    /// Sharing a file URL was the first attempt and it is wrong: Messages and WhatsApp treat a
+    /// `.png` on disk as a **document** and send it as an attachment tile with a filename, not as a
+    /// picture in the conversation. SwiftUI's `Image` is `Transferable` as image data, which is
+    /// what those apps inline. Same bitmap, entirely different result at the other end.
+    static func image(window: ArmorWindow, saved: Double, currency: String) -> UIImage {
+        render(window: window, saved: saved, currency: currency)
+    }
+
+    /// Still useful for writing a copy out in tests, where a file is the point.
+    static func write(window: ArmorWindow, saved: Double, currency: String) -> URL? {
+        guard let data = render(window: window, saved: saved, currency: currency).pngData() else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sale-armor-guard.png")
+        do { try data.write(to: url); return url } catch { return nil }
+    }
+
+    private static func render(window: ArmorWindow, saved: Double, currency: String) -> UIImage {
+        let w: CGFloat = 540, h: CGFloat = 540
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        format.scale = 3
+
+        return UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format).image { ctx in
+            let cg = ctx.cgContext
+            UIColor(Px.bg).setFill()
+            cg.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            ShieldArt.wall(cg, w, h)
+
+            // Sword and halo, reusing the shield's composition so a shared card and a blocked
+            // screen are recognisably the same object.
+            ShieldArt.halo(cg, w, h, centreY: 0.34)
+            ShieldArt.blade(cg, w, h, centreY: 0.34, fill: 0.30)
+
+            let gold = UIColor(Px.gold), dim = UIColor(Px.dim), ink = UIColor(Px.ink)
+            line(window.mode == .locked ? "LOCKED" : "ARMED",
+                 font: ShieldArt.pixelFont(44), colour: gold, y: h * 0.60, width: w)
+            line(window.name.isEmpty ? "THE GUARD" : window.name.uppercased(),
+                 font: ShieldArt.pixelFont(24), colour: ink, y: h * 0.685, width: w)
+            line(until(window), font: ShieldArt.pixelFont(17), colour: dim, y: h * 0.745, width: w)
+
+            if saved > 0 {
+                line(currency + amount(saved), font: ShieldArt.pixelFont(30), colour: gold,
+                     y: h * 0.800, width: w)
+                line("NOT SPENT", font: ShieldArt.pixelFont(15), colour: dim, y: h * 0.862, width: w)
+            }
+            line("SALE ARMOR", font: ShieldArt.pixelFont(13), colour: dim, y: h - 34, width: w)
+        }
+    }
+
+    private static func line(_ text: String, font: UIFont, colour: UIColor, y: CGFloat, width: CGFloat) {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: colour, .kern: 1.5]
+        let size = (text as NSString).size(withAttributes: attributes)
+        (text as NSString).draw(at: CGPoint(x: (width - size.width) / 2, y: y), withAttributes: attributes)
+    }
+
+    private static func until(_ window: ArmorWindow) -> String {
+        switch window.pattern {
+        case let .daily(from, to):     return "EVERY DAY \(from.text)-\(to.text)"
+        case let .weekly(_, from, to): return "SOME DAYS \(from.text)-\(to.text)"
+        case .monthly:                 return "THE DAYS MY MONEY LANDS"
+        case .doubleDates:             return "EVERY DOUBLE-DATE SALE"
+        case .dateRange:               return "UNTIL IT ENDS"
+        }
+    }
+
+    private static func amount(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? "0"
     }
 }

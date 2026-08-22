@@ -20,6 +20,25 @@ enum ArmorPattern: Codable, Equatable, Hashable {
     /// A dozen sales a year, so it cannot be expressed as `monthly` — the day changes each time.
     case doubleDates
 
+    /// The longest single stretch this pattern keeps the shield up, or nil when it does not have a
+    /// bounded one. Only locked guards ask, and only to refuse a lock nobody could live with.
+    ///
+    /// A repeating pattern is measured by one occurrence rather than by the whole schedule: a nightly
+    /// 9pm–7am guard shuts the apps for ten hours at a time, not forever, and there is a way out of
+    /// it every single morning.
+    func longestRun(calendar: Calendar = .current) -> TimeInterval? {
+        func span(_ from: Clock, _ to: Clock) -> TimeInterval {
+            let a = from.hour * 60 + from.minute, b = to.hour * 60 + to.minute
+            return TimeInterval(((b - a) + 24 * 60) % (24 * 60)) * 60
+        }
+        switch self {
+        case let .dateRange(start, end): return end.timeIntervalSince(start)
+        case let .daily(from, to):       return span(from, to)
+        case let .weekly(_, from, to):   return span(from, to)
+        case .monthly, .doubleDates:     return 24 * 3600   // whole days, one at a time
+        }
+    }
+
     var label: String {
         switch self {
         case .dateRange:  "Once"
@@ -48,9 +67,37 @@ struct Clock: Codable, Equatable, Hashable, Comparable {
 }
 
 /// **One armed guard: some apps, and a pattern that says when they are shut.**
+/// **How much rope the guard gives you.**
+///
+/// The whole product rests on a decision made at two in the afternoon binding the person who shows
+/// up at 1:47 in the morning. A guard you can end whenever you like is friction, which is enough
+/// for most people most of the time. A guard you cannot end is precommitment, which is the only
+/// answer to "can't I just switch it off?".
+enum GuardMode: String, Codable, Equatable {
+    /// Friction when you want it. Disarm whenever.
+    case standard
+    /// No negotiating later. Sale Armor will not end this one early.
+    case locked
+
+    /// **Locked guards are capped, and this is why.**
+    ///
+    /// Somebody who locks Amazon for thirty days and then needs a replacement charger tomorrow has
+    /// been failed by the feature, not helped by it. Three days covers every window this app is
+    /// actually for — a night, a payday, a sale weekend — and is short enough that a mistake is
+    /// survivable rather than something to uninstall the app over.
+    static let lockedLimit: TimeInterval = 72 * 3600
+}
+
 struct ArmorWindow: Codable, Equatable {
     var name: String
     var pattern: ArmorPattern
+
+    /// Standard unless chosen otherwise.
+    ///
+    /// Decoded with a default rather than required: a window saved before this existed must still
+    /// load, and the failure mode of a stricter decode is somebody's armed guard silently vanishing
+    /// on upgrade.
+    var mode: GuardMode = .standard
 
     /// The chosen apps, as opaque tokens. **This app never learns which apps they are** — the
     /// picker hands back tokens the system can resolve and we cannot.
@@ -62,6 +109,18 @@ struct ArmorWindow: Codable, Equatable {
 
     var appCount: Int {
         selection.applicationTokens.count + selection.categoryTokens.count
+    }
+
+    /// Whether Sale Armor will let this guard be ended right now.
+    ///
+    /// **Deliberately not "can this be bypassed".** It cannot be made impossible: Family Controls
+    /// authorization can be revoked in Settings, and deleting the app clears its ManagedSettings
+    /// along with it. No iPhone app is sovereign over the person holding the phone, and copy that
+    /// claims otherwise is a promise the product cannot keep. What this returns is the honest
+    /// version — whether *this app* will do it for you.
+    func canDisarm(at date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        guard mode == .locked else { return true }
+        return !covers(date, calendar: calendar)
     }
 
     /// Whether the shield should be up at this instant. The extension handles the edges; this is
@@ -85,6 +144,22 @@ struct ArmorWindow: Codable, Equatable {
         case .doubleDates:
             return calendar.component(.day, from: date) == calendar.component(.month, from: date)
         }
+    }
+
+    init(name: String, pattern: ArmorPattern, selection: FamilyActivitySelection,
+         mode: GuardMode = .standard) {
+        self.name = name
+        self.pattern = pattern
+        self.selection = selection
+        self.mode = mode
+    }
+
+    init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        name = try box.decode(String.self, forKey: .name)
+        pattern = try box.decode(ArmorPattern.self, forKey: .pattern)
+        selection = try box.decode(FamilyActivitySelection.self, forKey: .selection)
+        mode = try box.decodeIfPresent(GuardMode.self, forKey: .mode) ?? .standard
     }
 
     /// True when `date`'s time of day falls in the window, including windows that wrap midnight.
