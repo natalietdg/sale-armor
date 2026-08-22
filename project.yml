@@ -49,7 +49,13 @@ targets:
     platform: iOS
     # Shared/ is compiled into BOTH targets. The extension is a separate process and cannot see
     # the app's types, but it must read the same armed window and clear the same shield store.
-    sources: [SaleArmor, Shared]
+    sources:
+      - SaleArmor
+      - Shared
+      # One manifest per bundle, not one per project: an extension that reads UserDefaults needs
+      # its own copy or the upload is flagged for an undeclared required-reason API.
+      - path: SaleArmor/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor
@@ -78,7 +84,7 @@ targets:
         RevenueCatAPIKey: $(REVENUECAT_API_KEY)
         CFBundleShortVersionString: "1.0"
         # Build 2 predates the paywall, the cooling-off vault and the reminders.
-        CFBundleVersion: "20"
+        CFBundleVersion: "21"
         # Pixelify Sans, SIL Open Font Licence — free for commercial use. Chosen over Press Start
         # 2P because the app has real sentences in it and Press Start is unreadable below ~14pt.
         UIAppFonts:
@@ -108,7 +114,11 @@ targets:
   SaleArmorMonitor:
     type: app-extension
     platform: iOS
-    sources: [SaleArmorMonitor, Shared]
+    sources:
+      - SaleArmorMonitor
+      - Shared
+      - path: SaleArmor/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor.monitor
@@ -133,7 +143,7 @@ targets:
         CFBundleDisplayName: Sale Armor Monitor
         CFBundleShortVersionString: "1.0"
         # Must match the host app exactly or the upload is rejected.
-        CFBundleVersion: "20"
+        CFBundleVersion: "21"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldMonitor
@@ -154,6 +164,8 @@ targets:
       - SaleArmorShield
       - Shared
       - path: SaleArmor/Fonts/PixelifySans.ttf
+        buildPhase: resources
+      - path: SaleArmor/PrivacyInfo.xcprivacy
         buildPhase: resources
     settings:
       base:
@@ -181,7 +193,7 @@ targets:
           - PixelifySans.ttf
         CFBundleShortVersionString: "1.0"
         # Must match the host app exactly or the upload is rejected.
-        CFBundleVersion: "20"
+        CFBundleVersion: "21"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldConfig
