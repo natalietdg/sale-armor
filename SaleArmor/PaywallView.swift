@@ -29,6 +29,13 @@ struct Plan: Identifiable, Equatable {
     static func == (a: Plan, b: Plan) -> Bool { a.id == b.id }
 }
 
+/// The two links Apple requires in the binary, not only in the App Store listing. Shared with the
+/// guard screen: a subscriber never sees the paywall again, so the paywall cannot be the only route.
+enum Policy {
+    static let terms = URL(string: "https://salearmor.pages.dev/terms")!
+    static let privacy = URL(string: "https://salearmor.pages.dev/privacy")!
+}
+
 /// The gate. Nothing in Sale Armor is reachable until something here is bought.
 ///
 /// Everything App Review requires for a subscription is on this one screen, because a missing piece
@@ -37,9 +44,6 @@ struct Plan: Identifiable, Equatable {
 struct PaywallView: View {
     @ObservedObject var subscription: Subscription
     @State private var chosen: Plan?
-
-    private static let terms = URL(string: "https://salearmor.pages.dev/terms")!
-    private static let privacy = URL(string: "https://salearmor.pages.dev/privacy")!
 
     var body: some View {
         VStack(spacing: 0) {
@@ -164,8 +168,8 @@ struct PaywallView: View {
 
             HStack(spacing: Px.unit * 4) {
                 Button("Restore") { Task { await subscription.restore() } }
-                Link("Terms", destination: Self.terms)
-                Link("Privacy", destination: Self.privacy)
+                Link("Terms", destination: Policy.terms)
+                Link("Privacy", destination: Policy.privacy)
             }
             .font(.px(10)).foregroundStyle(Px.dim)
         }

@@ -33,6 +33,8 @@ struct ContentView: View {
                         .padding(Px.unit * 5)
                         .frame(maxWidth: 520)
                         .frame(maxWidth: .infinity)
+                    Spacer(minLength: 0)
+                    policyFooter
                 } else {
                     PaywallView(subscription: subscription)
                         .padding(.horizontal, Px.unit * 5)
@@ -67,6 +69,18 @@ struct ContentView: View {
             }
         }
         .padding(.top, Px.unit * 2)
+    }
+
+    /// A subscriber never sees the paywall again, so its Terms and Privacy links would be the only
+    /// ones in the app and would be unreachable the moment they are needed.
+    private var policyFooter: some View {
+        HStack(spacing: Px.unit * 4) {
+            Link("Terms", destination: Policy.terms)
+            Link("Privacy", destination: Policy.privacy)
+        }
+        .font(.px(10)).foregroundStyle(Px.dim)
+        .padding(.bottom, Px.unit * 3)
+        .accessibilityIdentifier("policyFooter")
     }
 
     /// Two pixel bars for on, one for off. A speaker glyph would be the obvious choice and the
