@@ -6,6 +6,9 @@ struct ContentView: View {
     @StateObject private var controller = ArmorController()
     @StateObject private var subscription = Subscription()
     @StateObject private var music = Music()
+    /// Owned by the app delegate, not by this view — a payday offer can be tapped before any view
+    /// exists. See `PaydayOfferInbox`.
+    @ObservedObject private var offers = PaydayOfferInbox.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = Demo.opensWishlist ? Tab.wishlist : Tab.guardTab
 
@@ -44,7 +47,13 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .task { controller.syncWithClock() }
+        .task {
+            controller.syncWithClock()
+            startOfferedSessionIfTapped()
+        }
+        // Checked in both places on purpose: a cold launch from the notification can set the flag
+        // before this view exists, and a tap while the app is open sets it afterwards.
+        .onChange(of: offers.wasAccepted) { _, _ in startOfferedSessionIfTapped() }
         .onChange(of: scenePhase) { _, phase in
             music.setActive(phase == .active)
             guard phase == .active else { return }
@@ -52,6 +61,13 @@ struct ContentView: View {
             // A subscription can lapse or be restored while the app is closed.
             Task { await subscription.refresh() }
         }
+    }
+
+    /// The offer said a tap would start a session, so it starts one.
+    private func startOfferedSessionIfTapped() {
+        guard offers.wasAccepted else { return }
+        offers.wasAccepted = false
+        controller.acceptPaydayOffer()
     }
 
     private var tabBar: some View {
@@ -75,12 +91,13 @@ struct ContentView: View {
     /// ones in the app and would be unreachable the moment they are needed.
     private var policyFooter: some View {
         HStack(spacing: Px.unit * 4) {
-            Link("Terms", destination: Policy.terms)
-            Link("Privacy", destination: Policy.privacy)
+            Link(destination: Policy.terms) { Text("Terms").pxTapTarget() }
+                .accessibilityIdentifier("policy-terms")
+            Link(destination: Policy.privacy) { Text("Privacy").pxTapTarget() }
+                .accessibilityIdentifier("policy-privacy")
         }
         .font(.px(10)).foregroundStyle(Px.dim)
         .padding(.bottom, Px.unit * 3)
-        .accessibilityIdentifier("policyFooter")
     }
 
     /// Two pixel bars for on, one for off. A speaker glyph would be the obvious choice and the
@@ -96,6 +113,7 @@ struct ContentView: View {
             }
             .frame(width: Px.unit * 11, height: Px.unit * 9)
             .background(Px.bg)
+            .pxTapTarget()
         }
         .accessibilityLabel(music.isOn ? "Turn the music off" : "Turn the music on")
         .accessibilityIdentifier("musicToggle")
@@ -112,6 +130,7 @@ struct ContentView: View {
                               shielding: controller.isShielding,
                               saved: controller.wishlist.saved,
                               paid: subscription.paidSoFar,
+                              problem: controller.problem,
                               onDisarm: { controller.disarm() })
                 } else {
                     ArmView(controller: controller)
@@ -131,21 +150,24 @@ private struct PermissionView: View {
     @ObservedObject var controller: ArmorController
 
     var body: some View {
-        VStack(spacing: Px.unit * 6) {
-            Spacer()
-            SwordSprite(lit: false).frame(width: 350)
-            Text("Sale Armor").font(.px(30, .black)).tracking(3).foregroundStyle(Px.ink)
-            Text("Shut the shopping apps for the hours you'd regret.")
-                .font(.px(13)).foregroundStyle(Px.dim).multilineTextAlignment(.center)
+        // Centred while it fits, scrollable once it does not. See `PxCenteredScroll`.
+        PxCenteredScroll {
+            VStack(spacing: Px.unit * 6) {
+                Spacer()
+                SwordSprite(lit: false).frame(width: 350)
+                Text("Sale Armor").font(.px(30, .black)).tracking(3).foregroundStyle(Px.ink)
+                Text("Shut the shopping apps for the hours you'd regret.")
+                    .font(.px(13)).foregroundStyle(Px.dim).multilineTextAlignment(.center)
 
-            Button("Protect my wallet") { Task { await controller.requestAuthorization() } }
-                .buttonStyle(PxButtonStyle())
+                Button("Protect my wallet") { Task { await controller.requestAuthorization() } }
+                    .buttonStyle(PxButtonStyle())
 
-            if let problem = controller.problem {
-                Text(problem).font(.px(11)).foregroundStyle(Px.alert)
-                    .multilineTextAlignment(.center)
+                if let problem = controller.problem {
+                    Text(problem).font(.px(11)).foregroundStyle(Px.alert)
+                        .multilineTextAlignment(.center)
+                }
+                Spacer()
             }
-            Spacer()
         }
     }
 }
@@ -187,7 +209,11 @@ private struct ArmView: View {
                     .padding(.top, Px.unit / 2)
                 VStack(alignment: .leading, spacing: Px.unit) {
                     HStack(spacing: Px.unit) {
-                        if value == .locked { Text("🔒").font(.px(11)) }
+                        // Drawn for the same reason the checkbox above is: Pixelify Sans has no
+                        // padlock either. See `PxGlyph`.
+                        if value == .locked {
+                            PxGlyph(.lock, height: 16, colour: mode == value ? Px.gold : Px.ink)
+                        }
                         Text(title.uppercased()).font(.px(12, .black))
                             .foregroundStyle(mode == value ? Px.gold : Px.ink)
                     }
@@ -209,18 +235,13 @@ private struct ArmView: View {
     private func armNow() {
         armed += 1
         controller.arm(name: chosen?.rawValue ?? "The guard",
-                       pattern: pattern, selection: selection, mode: mode)
+                       pattern: plan.pattern(), selection: selection, mode: mode)
     }
 
     @State private var name = ""
     @State private var chosen: SaleKind?
-    @State private var kind = 1                      // Every day, the commonest case
-    @State private var start = Date()
-    @State private var end = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
-    @State private var from = Clock.evening
-    @State private var to = Clock.lateNight
-    @State private var weekdays: Set<Int> = [6, 7]   // Friday, Saturday
-    @State private var monthDays: Set<Int> = [25]    // payday
+    /// The whole "When" answer, in one value. See `SchedulePlan` for why it is not eight.
+    @State private var plan = SchedulePlan()
     @State private var selection = FamilyActivitySelection()
     @State private var picking = false
 
@@ -229,27 +250,17 @@ private struct ArmView: View {
     @State private var armed = 0
     @State private var chose = 0
 
-    private static let kinds = ["Now", "Once", "Daily", "Days", "Dates", "N.N"]
+    /// Payday, mirrored out of `controller.payday` by `loadPayday()`.
+    @State private var paydayShape = 0
+    @State private var paydayDay = 25
+    @State private var paydayAnchor = Date()
+
     private static let dayLetters = ["S", "M", "T", "W", "T", "F", "S"]
+    private static let paydayShapes = ["Off", "Date", "Last day", "2 weeks"]
 
     /// How long "now" lasts, in hours. Three choices, not a slider: this is chosen in the ninety
     /// seconds before you would have opened a shopping app, and a slider is a decision.
     private static let nowOptions: [(String, Int)] = [("3 hours", 3), ("Tonight", 8), ("24 hours", 24)]
-    @State private var nowHours = 3
-
-    private var pattern: ArmorPattern {
-        switch kind {
-        // A window that has already started. `syncWithClock` raises the shield the moment this is
-        // armed, so the apps shut immediately rather than at the next scheduled edge.
-        case 0:  .dateRange(start: Date().addingTimeInterval(-60),
-                            end: Date().addingTimeInterval(TimeInterval(nowHours) * 3600))
-        case 1:  .dateRange(start: start, end: end)
-        case 3:  .weekly(weekdays: weekdays, from: from, to: to)
-        case 4:  .monthly(days: monthDays)
-        case 5:  .doubleDates
-        default: .daily(from: from, to: to)
-        }
-    }
 
     var body: some View {
         ScrollView {
@@ -302,8 +313,10 @@ private struct ArmView: View {
                             Text(appCount == 0 ? "Choose apps" : "\(appCount) will be shut")
                                 .font(.px(14, .black)).foregroundStyle(Px.ink)
                             Spacer()
-                            Text("▶").font(.px(14)).foregroundStyle(Px.goldMetal)
+                            // Drawn, not typed — Pixelify Sans has no ▶ either. See `PxGlyph`.
+                            PxGlyph(.play, height: 18, colour: Px.goldMetal)
                         }
+                        .pxTapTarget()
                     }
                     .accessibilityIdentifier("chooseApps")
                 }
@@ -337,8 +350,15 @@ private struct ArmView: View {
 
                 Text("It arms itself and stands down on its own. You don't have to open this again.")
                     .font(.px(11)).foregroundStyle(Px.dim)
+
+                Divider().overlay(Px.line)
+                paydayCard
             }
         }
+        .onAppear { loadPayday() }
+        // The date field writes straight to the binding, so the setting is saved here rather than
+        // in a button action like the other two shapes.
+        .onChange(of: paydayAnchor) { _, _ in commitPayday() }
         .familyActivityPicker(isPresented: $picking, selection: $selection)
         // Arming is the one act on this screen that changes what the phone does, so it lands like
         // one. Picking a foe is a lighter tick — enough to confirm the tap without competing.
@@ -355,51 +375,42 @@ private struct ArmView: View {
     private func apply(_ sale: SaleKind) {
         chosen = sale
         name = sale.rawValue
-        switch sale.pattern() {
-        case let .dateRange(s, e):
-            kind = 0; start = s; end = e
-        case let .daily(f, t):
-            kind = 1; from = f; to = t
-        case let .weekly(days, f, t):
-            kind = 2; weekdays = days; from = f; to = t
-        case let .monthly(days):
-            kind = 3; monthDays = days
-        case .doubleDates:
-            kind = 4
-        }
+        plan.apply(sale)
     }
 
     private var segmented: some View {
         HStack(spacing: Px.unit / 2) {
-            ForEach(Array(Self.kinds.enumerated()), id: \.offset) { i, title in
-                Button { kind = i } label: {
-                    Text(title)
+            ForEach(SchedulePlan.Shape.allCases) { shape in
+                Button { plan.shape = shape } label: {
+                    Text(shape.title)
                         .font(.px(10, .black)).tracking(0.8).textCase(.uppercase)
-                        .foregroundStyle(kind == i ? Px.bg : Px.dim)
+                        .foregroundStyle(plan.shape == shape ? Px.bg : Px.dim)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, Px.unit * 2)
-                        .background(kind == i ? Px.goldMetal : Px.panel)
+                        .background(plan.shape == shape ? Px.goldMetal : Px.panel)
+                        .pxTapTarget()
                 }
-                .accessibilityIdentifier("kind\(i)")
+                .accessibilityIdentifier("kind\(shape.rawValue)")
             }
         }
     }
 
     @ViewBuilder
     private var scheduleControls: some View {
-        switch kind {
-        case 0:
+        switch plan.shape {
+        case .now:
             VStack(alignment: .leading, spacing: Px.unit * 3) {
                 Text("Shut them for").pxLabel(9).foregroundStyle(Px.dim)
                 HStack(spacing: Px.unit) {
                     ForEach(Self.nowOptions, id: \.1) { label, hours in
-                        Button { nowHours = hours } label: {
+                        Button { plan.nowHours = hours } label: {
                             Text(label.uppercased())
                                 .font(.px(11, .black)).tracking(0.6)
-                                .foregroundStyle(nowHours == hours ? Px.bg : Px.dim)
+                                .foregroundStyle(plan.nowHours == hours ? Px.bg : Px.dim)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, Px.unit * 2)
-                                .background(nowHours == hours ? Px.goldMetal : Px.panel)
+                                .background(plan.nowHours == hours ? Px.goldMetal : Px.panel)
+                                .pxTapTarget()
                         }
                         .accessibilityIdentifier("now\(hours)")
                     }
@@ -407,57 +418,62 @@ private struct ArmView: View {
                 Text("Starts the second you arm it.")
                     .font(.px(10)).foregroundStyle(Px.dim)
             }
-        case 1:
+        case .once:
             VStack(alignment: .leading, spacing: Px.unit * 3) {
                 Text("From").pxLabel(9).foregroundStyle(Px.dim)
-                PxDateField(date: $start)
+                PxDateField(date: $plan.start)
                 Text("Until").pxLabel(9).foregroundStyle(Px.dim)
-                PxDateField(date: $end, notBefore: start)
+                PxDateField(date: $plan.end, notBefore: plan.start)
             }
-        case 3:
+        case .weekly:
             HStack(spacing: Px.unit) {
                 ForEach(1...7, id: \.self) { day in
                     Button {
-                        if weekdays.contains(day) { weekdays.remove(day) } else { weekdays.insert(day) }
+                        if plan.weekdays.contains(day) { plan.weekdays.remove(day) }
+                        else { plan.weekdays.insert(day) }
                     } label: {
                         Text(Self.dayLetters[day - 1])
                             .font(.px(12, .black))
-                            .foregroundStyle(weekdays.contains(day) ? Px.bg : Px.dim)
+                            .foregroundStyle(plan.weekdays.contains(day) ? Px.bg : Px.dim)
                             .frame(maxWidth: .infinity, minHeight: Px.unit * 9)
-                            .background(weekdays.contains(day) ? Px.goldMetal : Px.panel)
+                            .background(plan.weekdays.contains(day) ? Px.goldMetal : Px.panel)
+                            .pxTapTarget()
                     }
                     .accessibilityIdentifier("weekday\(day)")
                 }
             }
             timeRow
-        case 4:
+        case .monthly:
             // A month grid. 31 always shown — a month without one simply never fires.
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Px.unit), count: 7),
                       spacing: Px.unit) {
                 ForEach(1...31, id: \.self) { day in
                     Button {
-                        if monthDays.contains(day) { monthDays.remove(day) } else { monthDays.insert(day) }
+                        if plan.monthDays.contains(day) { plan.monthDays.remove(day) }
+                        else { plan.monthDays.insert(day) }
                     } label: {
                         Text("\(day)")
                             .font(.px(11, .black))
-                            .foregroundStyle(monthDays.contains(day) ? Px.bg : Px.dim)
+                            .foregroundStyle(plan.monthDays.contains(day) ? Px.bg : Px.dim)
                             .frame(maxWidth: .infinity, minHeight: Px.unit * 8)
-                            .background(monthDays.contains(day) ? Px.goldMetal : Px.panel)
+                            .background(plan.monthDays.contains(day) ? Px.goldMetal : Px.panel)
+                            .pxTapTarget()
                     }
+                    .accessibilityIdentifier("monthDay\(day)")
                 }
             }
-        case 5:
+        case .doubleDates:
             Text("Every 1.1, 2.2, 3.3 … 11.11 and 12.12. Twelve sales a year, all day.")
                 .font(.px(11)).foregroundStyle(Px.dim)
-        default:
+        case .daily:
             timeRow
         }
     }
 
     private var timeRow: some View {
         HStack(spacing: Px.unit * 3) {
-            clockStepper("From", $from)
-            clockStepper("To", $to)
+            clockStepper("From", $plan.from)
+            clockStepper("To", $plan.to)
         }
     }
 
@@ -504,6 +520,107 @@ private struct ArmView: View {
             PxPanel { control() }
         }
     }
+
+    // MARK: - payday
+
+    /// **A standing setting, below the form rather than inside it.**
+    ///
+    /// Payday is not part of the guard you are about to arm — it outlives every guard, and it shuts
+    /// nothing by itself. It lives on this screen because this is the app's only setup surface, and
+    /// because this is the screen you are on precisely when nothing is armed, which is the state
+    /// the offer exists for. One setting does not earn a settings screen.
+    private var paydayCard: some View {
+        field("When your money lands") {
+            VStack(alignment: .leading, spacing: Px.unit * 3) {
+                paydayPicker
+                paydayControls
+                Text(paydayText).font(.px(10)).foregroundStyle(Px.dim)
+            }
+        }
+    }
+
+    private var paydayPicker: some View {
+        HStack(spacing: Px.unit / 2) {
+            ForEach(Array(Self.paydayShapes.enumerated()), id: \.offset) { i, title in
+                Button { paydayShape = i; commitPayday() } label: {
+                    Text(title)
+                        .font(.px(10, .black)).tracking(0.8).textCase(.uppercase)
+                        .foregroundStyle(paydayShape == i ? Px.bg : Px.dim)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Px.unit * 2)
+                        .background(paydayShape == i ? Px.goldMetal : Px.panel)
+                        .pxTapTarget()
+                }
+                .accessibilityIdentifier("payday\(i)")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var paydayControls: some View {
+        switch paydayShape {
+        case 1:
+            // The same month grid as the Dates pattern above, single-select. A payday set to the
+            // 31st still lands in February — see `Payday.upcoming`.
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Px.unit), count: 7),
+                      spacing: Px.unit) {
+                ForEach(1...31, id: \.self) { day in
+                    Button { paydayDay = day; commitPayday() } label: {
+                        Text("\(day)")
+                            .font(.px(11, .black))
+                            .foregroundStyle(paydayDay == day ? Px.bg : Px.dim)
+                            .frame(maxWidth: .infinity, minHeight: Px.unit * 8)
+                            .background(paydayDay == day ? Px.goldMetal : Px.panel)
+                            .pxTapTarget()
+                    }
+                    .accessibilityIdentifier("paydayDay\(day)")
+                }
+            }
+        case 2:
+            Text("The last Monday to Friday of the month. An end-of-month that falls on a weekend steps back to the Friday. Public holidays aren't known to this app.")
+                .font(.px(10)).foregroundStyle(Px.dim)
+        case 3:
+            VStack(alignment: .leading, spacing: Px.unit * 2) {
+                Text("Your last payday").pxLabel(9).foregroundStyle(Px.dim)
+                PxDateField(date: $paydayAnchor)
+            }
+        default:
+            Text("Nothing is scheduled and nothing is sent.")
+                .font(.px(10)).foregroundStyle(Px.dim)
+        }
+    }
+
+    /// Says exactly what will arrive and when, because that is the promise being made — including
+    /// the case where nothing arrives at all.
+    private var paydayText: String {
+        guard let payday = controller.payday,
+              let next = payday.nextNudge(after: Date()) else {
+            return "Sale Armor sends nothing about payday until you set one here."
+        }
+        let when = next.formatted(.dateTime.day().month(.abbreviated))
+        return "Next: \(when), \(Payday.nudgeHour):00. At most one notification: an offer to shut the apps if no guard is armed, or a silent \"blocked for payday\" if one already covers that evening. Never both, never a second."
+    }
+
+    private var paydaySetting: Payday? {
+        switch paydayShape {
+        case 1:  Payday(shape: .dayOfMonth(paydayDay))
+        case 2:  Payday(shape: .lastWorkingDay)
+        case 3:  Payday(shape: .fortnightly(anchor: paydayAnchor))
+        default: nil
+        }
+    }
+
+    private func commitPayday() { controller.setPayday(paydaySetting) }
+
+    /// The stored setting drives the controls, never the other way round.
+    private func loadPayday() {
+        switch controller.payday?.shape {
+        case let .dayOfMonth(day):     paydayShape = 1; paydayDay = day
+        case .lastWorkingDay:          paydayShape = 2
+        case let .fortnightly(anchor): paydayShape = 3; paydayAnchor = anchor
+        case nil:                      paydayShape = 0
+        }
+    }
 }
 
 // MARK: - armed
@@ -528,6 +645,10 @@ private struct ArmedView: View {
     let saved: Double
     /// Roughly what Sale Armor has cost so far. Nil while unknown, and the return stays hidden.
     let paid: Double?
+    /// Shown because this screen can now be arrived at by tapping a payday offer, and an offer that
+    /// could not be honoured — a locked guard is already running — must say so rather than do
+    /// nothing.
+    let problem: String?
     let onDisarm: () -> Void
 
     /// Standing down is a decision, not a mistake — a warning tone would scold. A soft impact
@@ -535,99 +656,114 @@ private struct ArmedView: View {
     @State private var disarmed = 0
 
     var body: some View {
-        VStack(spacing: Px.unit * 5) {
-            Spacer()
-            SwordSprite(lit: shielding).frame(width: 340)
+        // Centred while it fits, scrollable once it does not. See `PxCenteredScroll`.
+        PxCenteredScroll {
+            VStack(spacing: Px.unit * 5) {
+                Spacer()
+                SwordSprite(lit: shielding).frame(width: 340)
 
-            // "Armed" and "On guard" are one word apart and the difference is the entire product:
-            // one means the apps are shut right now, the other means they will be, later. Read
-            // quickly, "Armed / waiting for the next window" looks exactly like protection, and the
-            // apps opening then reads as the app being broken. So the inactive state now says so
-            // outright, and says when it changes.
-            Text(shielding ? "On guard" : "Not yet")
-                .font(.px(28, .black)).tracking(3)
-                .foregroundStyle(shielding ? Px.armor : Px.gold)
+                // "Armed" and "On guard" are one word apart and the difference is the entire
+                // product: one means the apps are shut right now, the other means they will be,
+                // later. Read quickly, "Armed / waiting for the next window" looks exactly like
+                // protection, and the apps opening then reads as the app being broken. So the
+                // inactive state now says so outright, and says when it changes.
+                Text(shielding ? "On guard" : "Not yet")
+                    .font(.px(28, .black)).tracking(3)
+                    .foregroundStyle(shielding ? Px.armor : Px.gold)
 
-            HStack(spacing: Px.unit * 2) {
-                Text(window.name.uppercased()).pxLabel(13).foregroundStyle(Px.ink)
-                if window.mode == .locked {
-                    Text("🔒 LOCKED").font(.px(9, .black)).tracking(0.6)
-                        .foregroundStyle(Px.gold)
+                HStack(spacing: Px.unit * 2) {
+                    Text(window.name.uppercased()).pxLabel(13).foregroundStyle(Px.ink)
+                    if window.mode == .locked {
+                        HStack(spacing: Px.unit) {
+                            PxGlyph(.lock, height: 12, colour: Px.gold)
+                            Text("LOCKED").font(.px(9, .black)).tracking(0.6)
+                                .foregroundStyle(Px.gold)
+                        }
                         .padding(.horizontal, Px.unit).padding(.vertical, Px.unit / 2)
                         .background(Px.bg.opacity(0.75))
-                }
-            }
-
-            PxPanel {
-                VStack(alignment: .leading, spacing: Px.unit * 3) {
-                    row("Apps shut", "\(window.appCount)")
-                    row("Pattern", window.pattern.label)
-                    row("When", Self.whenText(window.pattern))
-                }
-            }
-
-            if saved > 0 {
-                VStack(spacing: Px.unit) {
-                    Text("Money that stayed yours").pxLabel(9).foregroundStyle(Px.dim)
-                    Text(Self.money(saved))
-                        .font(.px(26, .black)).foregroundStyle(Px.goldMetal)
-                        .accessibilityIdentifier("armedSaved")
-                    // Only once it has actually paid for itself. Showing "0.4x" to someone who has
-                    // not turned anything down yet would be an argument against the app.
-                    if let paid, paid > 0, saved > paid {
-                        Text("\(Self.money(paid)) spent on Sale Armor · \(Self.multiple(saved / paid)) back")
-                            .font(.px(10)).foregroundStyle(Px.dim)
-                            .accessibilityIdentifier("armedReturn")
                     }
                 }
-            }
 
-            // Sharing is the one social mechanism that survives this app's architecture, and it is
-            // offered here rather than at the moment of folding — you press this while calm and
-            // rather pleased with yourself, never at 1:47am. iOS owns the sheet, so Sale Armor
-            // never learns who it went to and no contact ever touches the app.
-            // An image, not a line of text. A picture is what actually gets posted, and the card
-            // carries the same sword the shield does so the two read as one object.
-            ShareLink(item: card ?? Image(systemName: "shield"),
-                      message: Text(Self.brag(window)),
-                      preview: SharePreview("Sale Armor", image: card ?? Image(systemName: "shield"))) {
-                Text(window.mode == .locked ? "Tell someone I'm locked out" : "Tell someone")
-                    .font(.px(12, .black)).foregroundStyle(Px.gold)
+                PxPanel {
+                    VStack(alignment: .leading, spacing: Px.unit * 3) {
+                        row("Apps shut", "\(window.appCount)")
+                        row("Pattern", window.pattern.label)
+                        row("When", Self.whenText(window.pattern))
+                    }
+                }
+
+                if saved > 0 {
+                    VStack(spacing: Px.unit) {
+                        Text("Money that stayed yours").pxLabel(9).foregroundStyle(Px.dim)
+                        Text(Self.money(saved))
+                            .font(.px(26, .black)).foregroundStyle(Px.goldMetal)
+                            .accessibilityIdentifier("armedSaved")
+                        // Only once it has actually paid for itself. Showing "0.4x" to someone who
+                        // has not turned anything down yet would be an argument against the app.
+                        if let paid, paid > 0, saved > paid {
+                            Text("\(Self.money(paid)) spent on Sale Armor · \(Self.multiple(saved / paid)) back")
+                                .font(.px(10)).foregroundStyle(Px.dim)
+                                .accessibilityIdentifier("armedReturn")
+                        }
+                    }
+                }
+
+                // Sharing is the one social mechanism that survives this app's architecture, and it
+                // is offered here rather than at the moment of folding — you press this while calm
+                // and rather pleased with yourself, never at 1:47am. iOS owns the sheet, so Sale
+                // Armor never learns who it went to and no contact ever touches the app.
+                // An image, not a line of text. A picture is what actually gets posted, and the card
+                // carries the same sword the shield does so the two read as one object.
+                ShareLink(item: card ?? Image(systemName: "shield"),
+                          message: Text(Self.brag(window)),
+                          preview: SharePreview("Sale Armor", image: card ?? Image(systemName: "shield"))) {
+                    Text(window.mode == .locked ? "Tell someone I'm locked out" : "Tell someone")
+                        .font(.px(12, .black)).foregroundStyle(Px.gold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Px.unit * 3)
+                        .pxBevel(light: Px.line, shade: Px.line, inset: true)
+                }
+                .accessibilityIdentifier("tellSomeone")
+                .disabled(card == nil)
+                .task(id: window) {
+                    card = Image(uiImage: ShareCard.image(window: window, saved: saved,
+                                                          currency: Self.currencySymbol))
+                }
+
+                if window.mode == .locked, !window.canDisarm() {
+                    // No disabled button. A greyed-out control invites tapping it repeatedly to find
+                    // out why; this states the decision instead, in the words it was made in.
+                    VStack(spacing: Px.unit) {
+                        HStack(spacing: Px.unit) {
+                            PxGlyph(.lock, height: 16, colour: Px.gold)
+                            Text("LOCKED").font(.px(12, .black)).foregroundStyle(Px.gold)
+                        }
+                        Text("You asked not to be able to end this one early.")
+                            .font(.px(10)).foregroundStyle(Px.dim)
+                            .multilineTextAlignment(.center)
+                    }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Px.unit * 3)
-                    .pxBevel(light: Px.line, shade: Px.line, inset: true)
-            }
-            .accessibilityIdentifier("tellSomeone")
-            .disabled(card == nil)
-            .task(id: window) {
-                card = Image(uiImage: ShareCard.image(window: window, saved: saved,
-                                                      currency: Self.currencySymbol))
-            }
-
-            if window.mode == .locked, !window.canDisarm() {
-                // No disabled button. A greyed-out control invites tapping it repeatedly to find
-                // out why; this states the decision instead, in the words it was made in.
-                VStack(spacing: Px.unit) {
-                    Text("🔒 LOCKED").font(.px(12, .black)).foregroundStyle(Px.gold)
-                    Text("You asked not to be able to end this one early.")
-                        .font(.px(10)).foregroundStyle(Px.dim)
-                        .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("lockedNotice")
+                } else {
+                    Button("Disarm") { disarmed += 1; onDisarm() }
+                    .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.alert))
+                    .accessibilityIdentifier("disarm")
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Px.unit * 3)
-                .accessibilityIdentifier("lockedNotice")
-            } else {
-                Button("Disarm") { disarmed += 1; onDisarm() }
-                .buttonStyle(PxButtonStyle(tint: Px.panel, text: Px.alert))
-                .accessibilityIdentifier("disarm")
-            }
 
-            Text(shielding ? "Nothing to do. Close this."
-                           : "Your apps are open right now. \(Self.startsText(window.pattern))")
-                .font(.px(11)).foregroundStyle(Px.dim)
-            Spacer()
+                if let problem {
+                    Text(problem).font(.px(11)).foregroundStyle(Px.alert)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("armedProblem")
+                }
+
+                Text(shielding ? "Nothing to do. Close this."
+                               : "Your apps are open right now. \(Self.startsText(window.pattern))")
+                    .font(.px(11)).foregroundStyle(Px.dim)
+                Spacer()
+            }
+            .sensoryFeedback(.impact(weight: .light), trigger: disarmed)
         }
-        .sensoryFeedback(.impact(weight: .light), trigger: disarmed)
     }
 
     private func row(_ label: String, _ value: String) -> some View {
@@ -687,11 +823,25 @@ private struct WishlistView: View {
     @State private var name = ""
     @State private var link = ""
     @State private var price = ""
+    /// Which park-form field holds the caret, so the form can be scrolled clear of the keyboard.
+    @FocusState private var focused: Field?
+
+    private enum Field { case name, link, price }
+
+    /// The scroll target for `focused`. The button, not the form: the button is what the keyboard
+    /// covers, and scrolling to the form would leave it exactly where it was.
+    private static let parkButtonID = "park-it-button"
 
     var body: some View {
         // The price field opens a decimal pad, which has no return key — so the keyboard stays up
         // and sits over the Park It button directly beneath it. Dragging the list now puts it away,
         // which is the gesture people already try when a keyboard is in the way.
+        //
+        // Dragging is not enough on its own. In landscape the keyboard takes over half the screen:
+        // the scroll viewport ends at y 450 while the button runs to y 502, so the one control the
+        // form exists for is off the bottom the moment you start typing, and nothing on screen says
+        // it is there. So focusing any field scrolls it into view — see `focused` below.
+        ScrollViewReader { scroll in
         ScrollView {
             VStack(alignment: .leading, spacing: Px.unit * 5) {
                 defendedPanel
@@ -727,6 +877,17 @@ private struct WishlistView: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
+        // After the keyboard, not before it: the scroll offset is clamped to the viewport as it is
+        // at the moment this runs, and on focus the viewport has not shrunk yet. One runloop turn
+        // later it has, and the button can actually be brought up.
+        .onChange(of: focused) { _, field in
+            guard field != nil else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(350))
+                withAnimation { scroll.scrollTo(Self.parkButtonID, anchor: .bottom) }
+            }
+        }
+        }
     }
 
     /// The whole point of the feature: money that stayed yours.
@@ -754,25 +915,35 @@ private struct WishlistView: View {
         PxPanel {
             VStack(alignment: .leading, spacing: Px.unit * 3) {
                 Text("Park an impulse").pxLabel().foregroundStyle(Px.gold)
+                // `pxTapTarget` on the field itself, not on a label: a text field is its own
+                // control, and 22pt of it is a third of what a fingertip needs.
                 TextField("", text: $name,
                           prompt: Text("What were you about to buy?").foregroundColor(Px.dim))
                     .font(.px(14, .black)).foregroundStyle(Px.ink).textFieldStyle(.plain)
+                    .pxTapTarget()
+                    .focused($focused, equals: .name)
                     .accessibilityIdentifier("wishName")
                 TextField("", text: $link, prompt: Text("Link (optional)").foregroundColor(Px.dim))
                     .font(.px(12)).foregroundStyle(Px.dim).textFieldStyle(.plain)
                     .textInputAutocapitalization(.never)
+                    .pxTapTarget()
+                    .focused($focused, equals: .link)
                     .accessibilityIdentifier("wishLink")
                 TextField("", text: $price, prompt: Text("Price").foregroundColor(Px.dim))
                     .font(.px(14, .black)).foregroundStyle(Px.ink).textFieldStyle(.plain)
                     .keyboardType(.decimalPad)
+                    .pxTapTarget()
+                    .focused($focused, equals: .price)
                     .accessibilityIdentifier("wishPrice")
                 Button("Park it") {
                     controller.addWish(name: name, link: link, price: Double(price) ?? 0)
                     name = ""; link = ""; price = ""
+                    focused = nil
                 }
                 .buttonStyle(PxButtonStyle())
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 .accessibilityIdentifier("parkIt")
+                .id(Self.parkButtonID)
 
                 Text("It waits \(WishItem.coolingOff) days. Then Sale Armor asks you once — one\nnotification per thing, and nothing else.")
                     .font(.px(10)).foregroundStyle(Px.dim)
@@ -818,9 +989,14 @@ private struct WishlistView: View {
                 Spacer()
                 Text(Self.money(item.price)).font(.px(14, .black)).foregroundStyle(Px.gold)
             }
-            if let link = item.link, let url = URL(string: link) {
-                Link(destination: url) {
-                    Text(link).font(.px(10)).foregroundStyle(Px.dim).lineLimit(1)
+            if let link = item.link {
+                let text = Text(link).font(.px(10)).foregroundStyle(Px.dim)
+                // Only what a browser can open becomes a link. The rest stays readable text.
+                if let url = item.linkURL {
+                    Link(destination: url) { text.lineLimit(1).pxTapTarget() }
+                        .accessibilityIdentifier("wish-link")
+                } else {
+                    text.lineLimit(1)
                 }
             }
         }

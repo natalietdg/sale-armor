@@ -159,6 +159,16 @@ struct PaywallView: View {
             if let problem = subscription.problem {
                 Text(problem).font(.px(11)).foregroundStyle(Px.alert)
                     .multilineTextAlignment(.center)
+
+                // Without this the only way out of a failed load is a force-quit: `start()` runs
+                // from a `.task` that has already finished, and everything behind this screen is
+                // paywalled, so a reviewer who lands here has no app left to review.
+                Button { Task { await subscription.start() } } label: {
+                    Text("Try again").pxTapTarget()
+                }
+                .font(.px(11)).foregroundStyle(Px.gold)
+                .disabled(subscription.isWorking)
+                .accessibilityIdentifier("paywall-retry")
             }
 
             Text(renewalTerms)
@@ -166,10 +176,20 @@ struct PaywallView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
+            // 10pt type draws an 18pt-tall control, so each of these carries its own 44pt target.
+            // Restore is here for the same reason as the links: it is the only restore path in the
+            // app, and a control nobody can hit is a control the app does not have.
             HStack(spacing: Px.unit * 4) {
-                Button("Restore") { Task { await subscription.restore() } }
-                Link("Terms", destination: Policy.terms)
-                Link("Privacy", destination: Policy.privacy)
+                Button { Task { await subscription.restore() } } label: {
+                    Text("Restore").pxTapTarget()
+                }
+                .accessibilityIdentifier("policy-restore")
+
+                Link(destination: Policy.terms) { Text("Terms").pxTapTarget() }
+                    .accessibilityIdentifier("policy-terms")
+
+                Link(destination: Policy.privacy) { Text("Privacy").pxTapTarget() }
+                    .accessibilityIdentifier("policy-privacy")
             }
             .font(.px(10)).foregroundStyle(Px.dim)
         }

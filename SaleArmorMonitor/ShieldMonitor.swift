@@ -17,6 +17,11 @@ class ShieldMonitor: DeviceActivityMonitor {
         guard activity.rawValue.hasPrefix(ArmorSchedule.prefix),
               let window = ArmorStore.load() else { return }
         Shield.raise(for: window)
+
+        // "Blocked for Payday" is sent from here, after the shield is actually up, because it is a
+        // statement rather than an offer. A pre-scheduled version would be a guess. The window goes
+        // with it: today being payday is not enough — this guard has to be the one covering it.
+        PaydayNotice.postStatus(payday: ArmorStore.loadPayday(), window: window)
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {

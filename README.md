@@ -37,6 +37,7 @@ then its total is fiction.
 | `ManagedSettings` | Raises and drops the shield |
 | `DeviceActivity` | Wakes the extension at the two edges of the window |
 | `SaleArmorMonitor` | The extension that does it while the app is closed |
+| `SaleArmorShield` | The block screen itself, drawn in the app's own pixel art |
 | `SaleArmorTests` | 20 tests over the schedule and wishlist logic |
 
 **One pattern can need several monitored intervals**, because `DeviceActivitySchedule` carries
@@ -83,9 +84,10 @@ profile, and rebuild.
 > interval ends. The app also keeps a private local list of items the user was tempted to buy, so they
 > can record what they chose not to purchase.
 >
-> The app is self-directed: it uses `.individual` authorization, has no parent or child roles, no
-> account, no analytics and no network calls. It never resolves the application tokens, and stores
-> nothing about which apps were chosen.
+> The app is self-directed: it uses `.individual` authorization, has no parent or child roles and
+> no account. It never resolves the application tokens, and stores nothing about which apps were
+> chosen — no Screen Time data of any kind leaves the device. The only network call it makes is
+> to RevenueCat, to check whether the subscription is active.
 
 ## Build
 
@@ -109,8 +111,8 @@ nothing here proves the block works.
 ## Not done yet
 
 - **The wishlist is local only.** No sync, no export.
-- **No shield screen.** The block screen a user hits is currently Apple's default. A
-  `ShieldConfiguration` extension would make it the 8-bit one, and needs its own entitlement request.
+- **No payday setting.** Payday exists as a day-of-month pattern, but the app cannot work out
+  a last-working-day or fortnightly payday, and never offers to guard it. See `BACKLOG-payday.md`.
 
 ## The icon
 

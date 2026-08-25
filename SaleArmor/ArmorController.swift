@@ -53,12 +53,14 @@ final class ArmorController: ObservableObject {
     @Published private(set) var window: ArmorWindow?
     @Published private(set) var wishlist = Wishlist()
     @Published private(set) var authorization: AuthorizationStatus
+    @Published private(set) var payday: Payday?
     @Published var problem: String?
 
     init() {
         authorization = Demo.isOn ? .approved : AuthorizationCenter.shared.authorizationStatus
         window = ArmorStore.load()
         wishlist = ArmorStore.loadWishlist()
+        payday = ArmorStore.loadPayday()
         if Demo.isSeeded { seedForScreenshots() }
     }
 
@@ -144,6 +146,8 @@ final class ArmorController: ObservableObject {
         // an interval starts, and a window starting now can wake it immediately.
         let previous = ArmorStore.load()
         ArmorStore.save(candidate)
+        // Kept past the disarm, so the payday offer can start a session without asking again.
+        ArmorStore.saveLastSelection(candidate.selection)
         do {
             // DeviceActivity has nothing to schedule against on a simulator.
             if !Demo.isOn { try ArmorSchedule.start(candidate) }
@@ -176,16 +180,65 @@ final class ArmorController: ObservableObject {
         window = nil
         ArmorStore.save(nil)
         problem = nil
+        // Payday evening is no longer covered, so its notice turns back into an offer.
+        refreshPaydayOffers(now: now)
         return true
+    }
+
+    // MARK: payday
+
+    /// Sets — or clears — the day money lands.
+    ///
+    /// **This is the only thing that brings the payday notifications into existence.** Clearing it
+    /// takes them away again, pending offers included.
+    func setPayday(_ payday: Payday?) {
+        self.payday = payday
+        ArmorStore.savePayday(payday)
+        refreshPaydayOffers()
+
+        guard payday != nil, !Demo.isOn else { return }
+        // Asked here rather than at launch, for the same reason the wishlist asks when you park
+        // something: a prompt that arrives while you are using the feature is one you understand.
+        Task { await Reminders.requestPermission() }
+    }
+
+    /// One tap on the offer: the session it promised, from now until 6am.
+    ///
+    /// **Refuses while anything is armed.** The offer is only booked when nothing is, but a booked
+    /// notification can be weeks old — arm a nightly guard on the 20th and tap the 25th's offer and
+    /// this would otherwise replace that guard, silently and with no undo. `arm` itself only
+    /// refuses *locked* guards, exactly as the comment above it predicted.
+    ///
+    /// Reuses the apps from the last guard. With none remembered, `arm` refuses and says "Pick at
+    /// least one app to shut" on the form the app has just opened onto — which is the honest
+    /// outcome, not a silent no-op.
+    func acceptPaydayOffer(now: Date = Date()) {
+        guard Payday.canStartOfferedSession(whileArmed: window) else {
+            let armed = window.map { $0.name.isEmpty ? "A guard" : $0.name } ?? "A guard"
+            problem = "\(armed) is already armed. Disarm it first if you want the payday session."
+            return
+        }
+        guard let pattern = Payday.session(acceptedAt: now) else { return }
+        arm(name: Payday.sessionName,
+            pattern: pattern,
+            selection: ArmorStore.loadLastSelection() ?? FamilyActivitySelection(),
+            mode: .standard)
+    }
+
+    private func refreshPaydayOffers(now: Date = Date()) {
+        guard !Demo.isOn else { return }
+        PaydayNotice.refreshOffers(payday: payday, window: window, now: now)
     }
 
     // MARK: the wishlist
 
     func addWish(name: String, link: String?, price: Double) {
+        // Stored with its scheme, so the saved value is the one that opens. A string that cannot be
+        // a web address is kept as typed and simply never drawn as a link — see `WishItem.url`.
         let trimmed = link?.trimmingCharacters(in: .whitespaces)
-        let item = WishItem(name: name,
-                            link: (trimmed?.isEmpty ?? true) ? nil : trimmed,
-                            price: max(0, price))
+        let cleaned = WishItem.url(from: trimmed)?.absoluteString
+            ?? ((trimmed?.isEmpty ?? true) ? nil : trimmed)
+        let item = WishItem(name: name, link: cleaned, price: max(0, price))
         wishlist.add(item)
         persistWishlist()
 
@@ -215,6 +268,9 @@ final class ArmorController: ObservableObject {
 
     func syncWithClock(now: Date = Date()) {
         guard !Demo.isOn else { return }
+        // Offers are booked months ahead, so they are re-decided on every foreground: what is
+        // armed by then decides whether payday earns an offer or a status notice.
+        defer { refreshPaydayOffers(now: now) }
         guard let window else {
             Shield.drop()
             return

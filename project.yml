@@ -219,6 +219,33 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
 
+  # THE REGRESSION GATE FOR THE POLICY LINKS.
+  #
+  # Three App Review rejections turned on one question nobody could answer without a device in
+  # hand: can the Terms and Privacy links actually be tapped? A unit test cannot see layout, so
+  # this target exists to measure the rendered frames on the review device itself.
+  SaleArmorUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - SaleArmorUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.natalieleong.salearmor.uitests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        TEST_TARGET_NAME: SaleArmor
+        # Without a launch screen the runner falls back to iPhone compatibility mode — a 768x1024
+        # window with the wrong safe-area insets. The tests read the device's real bottom inset out
+        # of the runner, so the runner has to be running natively for that number to mean anything.
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        # UI tests never ship, so they never need a distribution identity.
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+    dependencies:
+      - target: SaleArmor
+
+
 schemes:
   SaleArmor:
     build:
@@ -275,3 +302,17 @@ schemes:
         "-demo": true
       # No StoreKit configuration on purpose: -demo bypasses the store entirely, and pointing at
       # both would make it ambiguous which one let you in.
+
+  # Kept out of the SaleArmor scheme on purpose: the unit suite is the fast gate that runs on every
+  # change, and a UI test needs a booted simulator. Run this one before any App Store submission.
+  SaleArmorUITests:
+    build:
+      targets:
+        SaleArmor: [run, test]
+        SaleArmorUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SaleArmorUITests

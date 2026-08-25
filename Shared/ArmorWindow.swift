@@ -209,6 +209,33 @@ struct WishItem: Codable, Equatable, Identifiable {
     func isCool(now: Date = Date(), calendar: Calendar = .current) -> Bool {
         daysParked(now: now, calendar: calendar) >= Self.coolingOff
     }
+
+    /// **A link as a person types it, turned into one the system can actually open.**
+    ///
+    /// `URL(string: "amazon.com")` is *not* nil. It parses as a relative reference with no scheme,
+    /// so a `Link` built from it renders, highlights under the finger, and does nothing at all when
+    /// tapped — the same defect App Review cited for the policy links, on the form most people type.
+    ///
+    /// So a missing scheme is filled in rather than the string rejected, and the result has to be
+    /// something a browser can open: http or https, with a host that looks like one. Anything else
+    /// is shown as plain text, because a link that goes nowhere is worse than no link.
+    static func url(from typed: String?) -> URL? {
+        guard let trimmed = typed?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty else {
+            return nil
+        }
+        let withScheme = URL(string: trimmed)?.scheme == nil ? "https://" + trimmed : trimmed
+        guard let url = URL(string: withScheme),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              // A host with no dot in it is not somewhere to shop.
+              let host = url.host, host.contains(".")
+        else { return nil }
+        return url
+    }
+
+    /// Applied on read as well as on write. Wishes saved before the scheme was added are sitting in
+    /// the App Group already, and normalising them here is idempotent — where rewriting stored user
+    /// data on launch, for a display fix, is a migration that can only lose things.
+    var linkURL: URL? { Self.url(from: link) }
 }
 
 struct Wishlist: Codable, Equatable {
@@ -252,6 +279,9 @@ enum ArmorStore {
     static let appGroup = "group.com.natalieleong.salearmor"
     private static let windowKey = "salearmor.window.v2"
     private static let wishKey = "salearmor.wishlist.v1"
+    private static let paydayKey = "salearmor.payday.v1"
+    private static let lastSelectionKey = "salearmor.lastselection.v1"
+    private static let paydayStatusKey = "salearmor.payday.status.v1"
 
     private static var defaults: UserDefaults {
         UserDefaults(suiteName: appGroup) ?? .standard
@@ -279,6 +309,49 @@ enum ArmorStore {
     static func saveWishlist(_ list: Wishlist) {
         guard let data = try? JSONEncoder().encode(list) else { return }
         defaults.set(data, forKey: wishKey)
+    }
+
+    // MARK: payday
+
+    /// The monitor extension reads this to decide whether the shield it just raised is the one
+    /// payday was about.
+    static func loadPayday() -> Payday? {
+        guard let data = defaults.data(forKey: paydayKey) else { return nil }
+        return try? JSONDecoder().decode(Payday.self, from: data)
+    }
+
+    static func savePayday(_ payday: Payday?) {
+        guard let payday, let data = try? JSONEncoder().encode(payday) else {
+            defaults.removeObject(forKey: paydayKey)
+            return
+        }
+        defaults.set(data, forKey: paydayKey)
+    }
+
+    /// The apps chosen for the last guard, kept after it is disarmed.
+    ///
+    /// The payday offer promises a session in **one tap**, and it cannot keep that promise without
+    /// knowing which apps to shut. Same opaque tokens as `ArmorWindow.selection` — the app still
+    /// never learns which apps they are.
+    static func loadLastSelection() -> FamilyActivitySelection? {
+        guard let data = defaults.data(forKey: lastSelectionKey) else { return nil }
+        return try? JSONDecoder().decode(FamilyActivitySelection.self, from: data)
+    }
+
+    static func saveLastSelection(_ selection: FamilyActivitySelection) {
+        guard let data = try? JSONEncoder().encode(selection) else { return }
+        defaults.set(data, forKey: lastSelectionKey)
+    }
+
+    /// **Claims the payday status notice for `day`**, returning true only the first time.
+    ///
+    /// Test and record in one call rather than a read followed by a write: several intervals can
+    /// start on the same payday and the extension is woken separately for each, so a check that
+    /// is not also the claim leaves room for two notices to slip through.
+    static func claimPaydayStatus(_ day: String) -> Bool {
+        guard defaults.string(forKey: paydayStatusKey) != day else { return false }
+        defaults.set(day, forKey: paydayStatusKey)
+        return true
     }
 }
 

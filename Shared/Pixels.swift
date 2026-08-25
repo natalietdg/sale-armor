@@ -261,6 +261,138 @@ extension View {
     }
 }
 
+/// **Apple's 44x44pt minimum touch target, added around a control without redrawing it.**
+///
+/// Small type is part of this alphabet — the footer links are 10pt, which renders about 18pt tall.
+/// That is 41% of the minimum, and App Review rejected build 20 for exactly it: "Terms of use and
+/// privacy policy links were unresponsive when we tapped them". So the *target* grows and the type
+/// does not.
+///
+/// `contentShape` is the half that is easy to miss. Padding alone is empty space that hit-testing
+/// falls straight through, which leaves the target the size of the glyphs it was already too small
+/// for. And it has to wrap the control's **label**, not the control: a frame applied outside a
+/// `Button` or a `Link` moves the control, it does not widen what the control will accept.
+struct PxTapTarget: ViewModifier {
+    /// Human Interface Guidelines, not a house preference.
+    static let minimum: CGFloat = 44
+
+    func body(content: Content) -> some View {
+        content
+            .frame(minWidth: Self.minimum, minHeight: Self.minimum)
+            .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// Apply to a control's label — or, for a `TextField`, to the field itself, which has no
+    /// separate label to wrap. See `PxTapTarget`.
+    ///
+    /// **Apply it after the control's `background`, not before.** The painted chip then keeps the
+    /// exact size, colour and type it already had, and only the box the control accepts a finger in
+    /// grows. Applied before the background, the gold would grow with the target and every segmented
+    /// row in the app would change shape.
+    func pxTapTarget() -> some View { modifier(PxTapTarget()) }
+}
+
+/// **A screen that centres when it fits and scrolls when it does not.**
+///
+/// `ArmedView` and `PermissionView` are `Spacer`-centred columns, which is right in portrait at the
+/// default text size and has no answer at all to the opposite case. On an iPad in landscape at the
+/// largest accessibility text size the column was taller than the screen, so the `VStack` compressed
+/// its children, truncated their text, and pushed the tab bar to y −115 and the Terms and Privacy
+/// links to y 1154 on a 1024pt screen — off both ends, with no gesture that could reach either.
+/// That is build 20's unreachable-policy-links rejection (2.1(a), 3.1.2(c)) through a second door.
+///
+/// A plain `ScrollView` fixes reachability and breaks the portrait look, because a `Spacer` inside
+/// one has no height to claim and the content collects at the top of the screen. So the content is
+/// handed the viewport's height as a **minimum**: it still centres while there is room, and grows
+/// past the fold — scrollable — once there is not.
+struct PxCenteredScroll<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GeometryReader { viewport in
+            ScrollView {
+                content.frame(maxWidth: .infinity, minHeight: viewport.size.height)
+            }
+        }
+    }
+}
+
+/// **A mark the typeface cannot draw.**
+///
+/// Pixelify Sans has no padlock and no right-pointing triangle, so `Text("🔒")` and `Text("▶")` came
+/// out as the missing-character box in every orientation — and shipped that way into the App Store
+/// screenshots. It is the same failure the mode checkbox hit with ◼/◻ (see `ArmView.modeOption`),
+/// and it takes the same answer: draw the mark on the grid rather than borrowing a system font,
+/// which would be the only un-pixelated glyph on the screen.
+///
+/// The art is a character grid so it stays legible in source and editable without a tool, exactly
+/// like `SwordSprite.art`. `#` is a filled pixel, `.` is empty.
+struct PxGlyph: View {
+    enum Mark {
+        case lock, play
+
+        var art: [[Character]] {
+            switch self {
+            case .lock: [
+                "..###..",
+                ".##.##.",
+                ".#...#.",
+                ".#...#.",
+                "#######",
+                "###.###",
+                "###.###",
+                "#######"
+            ].map(Array.init)
+            case .play: [
+                "#....",
+                "##...",
+                "###..",
+                "####.",
+                "#####",
+                "####.",
+                "###..",
+                "##...",
+                "#...."
+            ].map(Array.init)
+            }
+        }
+    }
+
+    let mark: Mark
+    let colour: Color
+    /// How tall the mark is drawn at the default text size. `ScaledMetric` grows it with Dynamic
+    /// Type, so it keeps pace with the word beside it instead of shrinking into a speck.
+    @ScaledMetric private var height: CGFloat
+
+    init(_ mark: Mark, height: CGFloat, colour: Color) {
+        self.mark = mark
+        self.colour = colour
+        _height = ScaledMetric(wrappedValue: height)
+    }
+
+    var body: some View {
+        let art = mark.art
+        // Snapped to half a point — a whole device pixel at both 2x and 3x. A fractional one is the
+        // only way to blur pixel art.
+        let pixel = max(0.5, (height / CGFloat(art.count) * 2).rounded() / 2)
+        Canvas { ctx, _ in
+            for (y, row) in art.enumerated() {
+                for (x, ch) in row.enumerated() where ch == "#" {
+                    ctx.fill(Path(CGRect(x: CGFloat(x) * pixel, y: CGFloat(y) * pixel,
+                                         width: pixel, height: pixel)),
+                             with: .color(colour))
+                }
+            }
+        }
+        .frame(width: pixel * CGFloat(art[0].count), height: pixel * CGFloat(art.count))
+        // The words beside every one of these already carry the meaning — "LOCKED", "Choose apps" —
+        // so reading the mark aloud as well would only be noise.
+        .accessibilityHidden(true)
+    }
+}
+
 /// A hard-edged button that visibly *depresses* by one grid unit rather than fading or scaling.
 ///
 /// **Gold, not teal.** The palette splits by meaning: gold is *the thing you press*, teal is *the

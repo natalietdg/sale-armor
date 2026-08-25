@@ -10,7 +10,9 @@ import RevenueCat
 /// The one thing this must never do is lock out a paying customer. Every failure path below —
 /// no network, RevenueCat unreachable, a key that will not configure — leaves `isActive` alone
 /// rather than setting it false, because a wrongly-locked subscriber is a refund and a one-star
-/// review, while a wrongly-unlocked non-subscriber is a few days of free use.
+/// review, while a wrongly-unlocked non-subscriber is a few days of free use. So does a restore
+/// that comes back empty, which is just as likely to be the wrong Apple Account as a real lapse:
+/// **only a direct read of this account may lock** — see `AccessRule`.
 @MainActor
 final class Subscription: ObservableObject {
     /// Unlocked. Starts from the cached value so a returning subscriber is not made to wait for
@@ -37,11 +39,22 @@ final class Subscription: ObservableObject {
     /// and treating it as the source of truth is exactly what a receipt check is for.
     private static let cacheKey = "subscription.isActive"
 
+    /// One purchase sync per launch, and only when a "no" would contradict the cache. See `confirmed`.
+    private var hasSyncedPurchases = false
+
     init() {
         isActive = (Demo.isOn && !Demo.showsPaywall)
             || Demo.isUnlocked
             || UserDefaults.standard.bool(forKey: Self.cacheKey)
         if Demo.showsPaywall { plans = Self.samplePlans }
+
+        // The paywall is the only screen that calls `start()`, and an unlocked subscriber never
+        // sees it — so without this RevenueCat is never configured for them, the foreground
+        // `refresh()` in ContentView sits behind its `isConfigured` guard forever, and a lapsed or
+        // refunded subscription keeps full access. When the paywall *is* coming, its own `.task`
+        // does this instead. Detached from init so first paint never waits on the network, and the
+        // cached value above is already on screen by the time an answer arrives.
+        if isActive { Task { await start() } }
     }
 
     /// The real configured prices, with no store behind them. Used only for the paywall
@@ -70,6 +83,11 @@ final class Subscription: ObservableObject {
         return key
     }
 
+    /// Configures the store and loads what the paywall and the return figure need.
+    ///
+    /// Called from two places — `init` for someone already unlocked, the paywall's `.task` for
+    /// everyone else — so it is written to be safe to call again: configuring is guarded, and a
+    /// second run simply refetches. That is also what a Retry control would need.
     func start() async {
         guard !Demo.isOn else { return }   // sample plans are already in place
         guard let apiKey = Self.apiKey else {
@@ -90,10 +108,26 @@ final class Subscription: ObservableObject {
     func refresh() async {
         guard Purchases.isConfigured else { return }
         do {
-            apply(try await Purchases.shared.customerInfo())
+            let info = try await Purchases.shared.customerInfo()
+            apply(await confirmed(info), from: .directRead)
         } catch {
             // Deliberately silent: an offline launch must not lock a subscriber out.
         }
+    }
+
+    /// Separates a correct "no" from a premature one, which look identical from here.
+    ///
+    /// RevenueCat is configured fresh on every launch and starts an install knowing nothing about
+    /// it, so its first answer can arrive before this device's purchases have been posted — and
+    /// that is exactly the state every existing subscriber is in, since nothing configured the SDK
+    /// for them before now. Rather than lock someone the cache says has paid, post their purchases
+    /// once and take that answer instead. `syncPurchases` posts with a receipt-refresh policy of
+    /// `.never`, so it cannot start a receipt fetch of its own.
+    private func confirmed(_ info: CustomerInfo) async -> CustomerInfo {
+        guard isActive, !hasSyncedPurchases,
+              info.entitlements[Self.entitlement]?.isActive != true else { return info }
+        hasSyncedPurchases = true
+        return (try? await Purchases.shared.syncPurchases()) ?? info
     }
 
     /// Loads the offering, and says what went wrong when it does not.
@@ -140,11 +174,19 @@ final class Subscription: ObservableObject {
         let product = package.storeProduct
         let price = product.price as NSDecimalNumber
 
+        // The store's own formatter — the one behind `localizedPriceString` — so the per-unit figure
+        // is written in the same currency and style as the price sitting beside it. Building one by
+        // hand pairs the *device* locale with the *product* currency, and on a non-US device those
+        // disagree: "US$0.57 a day" under "$3.99". Never mutated; the SDK hands out a shared one.
+        let formatter = product.priceFormatter ?? {
+            let fallback = NumberFormatter()
+            fallback.numberStyle = .currency
+            fallback.currencyCode = product.currencyCode ?? "USD"
+            return fallback
+        }()
+
         func formatted(_ amount: Double) -> String {
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .currency
-            formatter.currencyCode = product.currencyCode ?? "USD"
-            return formatter.string(from: NSNumber(value: amount)) ?? ""
+            formatter.string(from: NSNumber(value: amount)) ?? ""
         }
 
         func plan(_ id: String, _ term: String, _ unit: String,
@@ -182,7 +224,7 @@ final class Subscription: ObservableObject {
         do {
             let result = try await Purchases.shared.purchase(package: package)
             guard !result.userCancelled else { return }
-            apply(result.customerInfo)
+            apply(result.customerInfo, from: .directRead)
         } catch {
             problem = error.localizedDescription
         }
@@ -195,19 +237,22 @@ final class Subscription: ObservableObject {
         isWorking = true
         defer { isWorking = false }
         do {
-            apply(try await Purchases.shared.restorePurchases())
+            apply(try await Purchases.shared.restorePurchases(), from: .restore)
             if !isActive { problem = "No subscription found for this Apple Account." }
         } catch {
             problem = error.localizedDescription
         }
     }
 
-    private func apply(_ info: CustomerInfo) {
+    private func apply(_ info: CustomerInfo, from answer: EntitlementAnswer) {
+        problem = nil
         let entitlement = info.entitlements[Self.entitlement]
-        isActive = entitlement?.isActive == true
+        let isEntitled = entitlement?.isActive == true
+        // Nothing found, and nothing authoritative said so: keep the cache and the paid figure.
+        guard AccessRule.writesThrough(isEntitled: isEntitled, from: answer) else { return }
+        isActive = isEntitled
         UserDefaults.standard.set(isActive, forKey: Self.cacheKey)
         paidSoFar = paid(for: entitlement)
-        problem = nil
     }
 
     /// Roughly what this person has paid Sale Armor, for the return figure on the armed screen.
