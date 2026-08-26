@@ -84,7 +84,7 @@ targets:
         RevenueCatAPIKey: $(REVENUECAT_API_KEY)
         CFBundleShortVersionString: "1.0"
         # Build 2 predates the paywall, the cooling-off vault and the reminders.
-        CFBundleVersion: "21"
+        CFBundleVersion: "22"
         # Pixelify Sans, SIL Open Font Licence — free for commercial use. Chosen over Press Start
         # 2P because the app has real sentences in it and Press Start is unreadable below ~14pt.
         UIAppFonts:
@@ -143,7 +143,7 @@ targets:
         CFBundleDisplayName: Sale Armor Monitor
         CFBundleShortVersionString: "1.0"
         # Must match the host app exactly or the upload is rejected.
-        CFBundleVersion: "21"
+        CFBundleVersion: "22"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldMonitor
@@ -193,7 +193,7 @@ targets:
           - PixelifySans.ttf
         CFBundleShortVersionString: "1.0"
         # Must match the host app exactly or the upload is rejected.
-        CFBundleVersion: "21"
+        CFBundleVersion: "22"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldConfig

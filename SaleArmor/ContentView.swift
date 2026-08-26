@@ -655,12 +655,24 @@ private struct ArmedView: View {
     /// just confirms the shield is gone.
     @State private var disarmed = 0
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    /// **True where the column has an iPhone's worth of room rather than an iPad's.**
+    ///
+    /// At full size this screen has to reach the saved figure and both buttons without a scroll:
+    /// the number is the whole payoff, and the App Store screenshot only ever shows the launch
+    /// position. On iPad it does; on a phone the column ran roughly 200pt past the fold and cut off
+    /// mid-label. Compact in *either* axis catches all three tight cases — phone portrait, phone
+    /// landscape, an iPad split-view column — where checking the device would catch none of them.
+    private var tight: Bool { horizontalSizeClass == .compact || verticalSizeClass == .compact }
+
     var body: some View {
         // Centred while it fits, scrollable once it does not. See `PxCenteredScroll`.
         PxCenteredScroll {
-            VStack(spacing: Px.unit * 5) {
+            VStack(spacing: Px.unit * (tight ? 3 : 5)) {
                 Spacer()
-                SwordSprite(lit: shielding).frame(width: 340)
+                SwordSprite(lit: shielding).frame(width: tight ? 180 : 340)
 
                 // "Armed" and "On guard" are one word apart and the difference is the entire
                 // product: one means the apps are shut right now, the other means they will be,

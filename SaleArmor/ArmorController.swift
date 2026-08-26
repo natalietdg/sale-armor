@@ -69,8 +69,10 @@ final class ArmorController: ObservableObject {
         func daysAgo(_ days: Int) -> Date {
             Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
         }
+        // Today's date, not a fixed one. A hard-coded day only shields on that day of the month,
+        // so the armed screenshot silently became the "Not yet" screen on every other day.
         window = ArmorWindow(name: "Payday",
-                             pattern: .monthly(days: [25]),
+                             pattern: .monthly(days: [Calendar.current.component(.day, from: Date())]),
                              selection: FamilyActivitySelection())
         wishlist = Wishlist(items: [
             WishItem(name: "New Balance 530", link: "shop.example.com", price: 489,
