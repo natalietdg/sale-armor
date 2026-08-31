@@ -753,6 +753,15 @@ private struct ArmedView: View {
                         Text("You asked not to be able to end this one early.")
                             .font(.px(10)).foregroundStyle(Px.dim)
                             .multilineTextAlignment(.center)
+                        // The release moment, because "locked" with no end reads as a trap. It is
+                        // read from the window rather than recomputed, so this line and `canDisarm`
+                        // can never disagree about when it lifts.
+                        if let until = window.lockedUntil {
+                            Text("Lifts at \(ArmorController.lockText(until))")
+                                .font(.px(10)).foregroundStyle(Px.gold)
+                                .multilineTextAlignment(.center)
+                                .accessibilityIdentifier("lockedUntil")
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Px.unit * 3)

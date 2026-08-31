@@ -105,7 +105,7 @@ final class ArmorController: ObservableObject {
     // MARK: arming
 
     func arm(name: String, pattern: ArmorPattern, selection: FamilyActivitySelection,
-             mode: GuardMode = .standard) {
+             mode: GuardMode = .standard, now: Date = Date()) {
         if case let .dateRange(start, end) = pattern, end <= start {
             problem = "The end has to come after the start."
             return
@@ -131,14 +131,27 @@ final class ArmorController: ObservableObject {
             return
         }
 
-        // The cap is checked before anything is written, because the whole point of a locked guard
-        // is that it cannot be undone afterwards — a mistake here is not correctable in the app.
-        if mode == .locked, let span = pattern.longestRun(), span > GuardMode.lockedLimit {
-            problem = "A locked guard can run for up to 3 days at a time."
-            return
+        // **The cap now measures the commitment, not one occurrence of it.**
+        //
+        // It is checked before anything is written, because the whole point of a locked guard is
+        // that it cannot be undone afterwards — a mistake here is not correctable in the app.
+        //
+        // `longestRun` was the wrong ruler: it reports how long the shield stays up per occurrence,
+        // so a payday guard measured 24 hours and passed, while the person arming it on the 20th
+        // could not disarm until the 26th. What has to fit inside three days is the stretch a
+        // person cannot get out of, which is `now` until the lock lifts.
+        var lockedUntil: Date?
+        if mode == .locked {
+            lockedUntil = ArmorWindow.commitmentEnd(pattern: pattern, from: now)
+            if let lockedUntil, lockedUntil.timeIntervalSince(now) > GuardMode.lockedLimit {
+                problem = "A locked guard can hold you for up to 3 days. This one would not let go "
+                        + "until \(Self.lockText(lockedUntil)) — arm it closer to the day."
+                return
+            }
         }
 
-        let candidate = ArmorWindow(name: name, pattern: pattern, selection: selection, mode: mode)
+        let candidate = ArmorWindow(name: name, pattern: pattern, selection: selection,
+                                    mode: mode, lockedUntil: lockedUntil)
         guard !candidate.isEmpty || Demo.isOn else {
             problem = "Pick at least one app to shut."
             return
@@ -172,6 +185,16 @@ final class ArmorController: ObservableObject {
     /// itself rather than doing nothing — a button that silently fails is a bug, and this has to
     /// read as the decision the user already made.
     @discardableResult
+    /// The lock's release moment, in the shortest form that is still unambiguous about which day.
+    static func lockText(_ date: Date, now: Date = Date(),
+                         calendar: Calendar = .current) -> String {
+        let time = date.formatted(.dateTime.hour().minute())
+        if calendar.isDate(date, inSameDayAs: now) { return time }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
+           calendar.isDate(date, inSameDayAs: tomorrow) { return "\(time) tomorrow" }
+        return "\(date.formatted(.dateTime.day().month(.abbreviated))), \(time)"
+    }
+
     func disarm(now: Date = Date()) -> Bool {
         if let window, !window.canDisarm(at: now) {
             problem = "\(window.name.isEmpty ? "This guard" : window.name) is locked until it ends."

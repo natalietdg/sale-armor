@@ -158,3 +158,148 @@ final class ImmediateGuardTests: XCTestCase {
         }
     }
 }
+
+/// **The 20:55 hole, and the rule that closes it.**
+///
+/// LOCKED used to mean "refuses while the shield is up", which is the weakest possible reading: a
+/// nightly 21:00 guard was fully cancellable at 20:55, five minutes before the only moment it
+/// exists for. `lockedUntil` pins the end of the first window the guard must sit through, decided
+/// while calm at arming, so the decision cannot be unmade as it approaches.
+///
+/// Every case below is asserted against a window carrying `lockedUntil`. The legacy case — a window
+/// saved before the field existed — is pinned separately, because tightening a promise somebody
+/// already armed under is its own kind of bug.
+final class LockedCommitmentTests: XCTestCase {
+
+    private let nightly = ArmorPattern.daily(from: Clock(hour: 21, minute: 0),
+                                             to: Clock(hour: 2, minute: 0))
+
+    private func at(_ hour: Int, _ minute: Int = 0, dayOffset: Int = 0) -> Date {
+        let base = Calendar.current.date(byAdding: .day, value: dayOffset, to: Date())!
+        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: base)!
+    }
+
+    private func locked(_ pattern: ArmorPattern, armedAt: Date) -> ArmorWindow {
+        ArmorWindow(name: "PAYDAY", pattern: pattern, selection: FamilyActivitySelection(),
+                    mode: .locked,
+                    lockedUntil: ArmorWindow.commitmentEnd(pattern: pattern, from: armedAt))
+    }
+
+    // MARK: - the bug
+
+    func testALockedGuardRefusesBeforeItsWindowEvenOpens() {
+        let guardWindow = locked(nightly, armedAt: at(18))
+        XCTAssertFalse(guardWindow.canDisarm(at: at(20, 55)),
+                       "20:55 on a 21:00 guard is the exact minute somebody wants out — this is the bug")
+        XCTAssertFalse(guardWindow.canDisarm(at: at(18, 1)), "and immediately after arming")
+    }
+
+    func testItStillRefusesInsideTheWindow() {
+        let guardWindow = locked(nightly, armedAt: at(18))
+        XCTAssertFalse(guardWindow.canDisarm(at: at(23)))
+        XCTAssertFalse(guardWindow.canDisarm(at: at(1, 30, dayOffset: 1)),
+                       "after midnight, where the window wraps")
+    }
+
+    func testItLetsGoOnceTheWindowItMustSitThroughHasEnded() {
+        let guardWindow = locked(nightly, armedAt: at(18))
+        XCTAssertTrue(guardWindow.canDisarm(at: at(2, 1, dayOffset: 1)),
+                      "one window sat through is the price; a guard nobody can remove is one they uninstall")
+    }
+
+    // MARK: - back-compatibility
+
+    func testALockedWindowWithoutLockedUntilKeepsItsOldBehaviour() {
+        let legacy = ArmorWindow(name: "PAYDAY", pattern: nightly,
+                                 selection: FamilyActivitySelection(), mode: .locked)
+        XCTAssertNil(legacy.lockedUntil)
+        XCTAssertFalse(legacy.canDisarm(at: at(23)), "still refuses while the shield is up")
+        XCTAssertTrue(legacy.canDisarm(at: at(12)),
+                      "and still releases between windows — the behaviour it was armed under")
+    }
+
+    func testAWindowSavedBeforeLockedUntilExistedStillDecodes() throws {
+        let selection = String(data: try JSONEncoder().encode(FamilyActivitySelection()),
+                              encoding: .utf8)!
+        let json = """
+        {"name":"PAYDAY","pattern":{"monthly":{"days":[25]}},"mode":"locked","selection":\(selection)}
+        """
+        let decoded = try JSONDecoder().decode(ArmorWindow.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.mode, .locked)
+        XCTAssertNil(decoded.lockedUntil, "absent, not a decode failure that loses the guard")
+    }
+
+    func testLockedUntilSurvivesARoundTrip() throws {
+        let original = locked(nightly, armedAt: at(18))
+        let decoded = try JSONDecoder().decode(ArmorWindow.self,
+                                               from: try JSONEncoder().encode(original))
+        XCTAssertEqual(decoded.lockedUntil, original.lockedUntil,
+                       "if this drifts, a relaunch silently unlocks the guard")
+    }
+}
+
+/// `commitmentEnd` — the one number the whole feature now rests on.
+final class CommitmentEndTests: XCTestCase {
+
+    private func at(_ hour: Int, _ minute: Int = 0, dayOffset: Int = 0) -> Date {
+        let base = Calendar.current.date(byAdding: .day, value: dayOffset, to: Date())!
+        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: base)!
+    }
+
+    func testAWrappingNightlyWindowEndsAfterMidnight() throws {
+        let end = try XCTUnwrap(ArmorWindow.commitmentEnd(
+            pattern: .daily(from: Clock(hour: 21, minute: 0), to: Clock(hour: 2, minute: 0)),
+            from: at(18)))
+        XCTAssertEqual(end.timeIntervalSince(at(2, 0, dayOffset: 1)), 0, accuracy: 61,
+                       "armed at 18:00, the first window it must sit through ends at 02:00 tomorrow")
+    }
+
+    func testANonWrappingWindowEndsTheSameDay() throws {
+        let end = try XCTUnwrap(ArmorWindow.commitmentEnd(
+            pattern: .daily(from: Clock(hour: 9, minute: 0), to: Clock(hour: 17, minute: 0)),
+            from: at(8)))
+        XCTAssertEqual(end.timeIntervalSince(at(17)), 0, accuracy: 61)
+    }
+
+    func testArmingInsideAWindowLocksUntilThatWindowEnds() throws {
+        let end = try XCTUnwrap(ArmorWindow.commitmentEnd(
+            pattern: .daily(from: Clock(hour: 9, minute: 0), to: Clock(hour: 17, minute: 0)),
+            from: at(12)))
+        XCTAssertEqual(end.timeIntervalSince(at(17)), 0, accuracy: 61,
+                       "not the end of tomorrow's window — the one you are already in")
+    }
+
+    func testAOneOffReportsItsOwnEnd() throws {
+        let start = at(20), finish = at(23)
+        let end = try XCTUnwrap(ArmorWindow.commitmentEnd(
+            pattern: .dateRange(start: start, end: finish), from: at(18)))
+        XCTAssertEqual(end, finish, "a one-off does not need searching for; it says when it ends")
+    }
+
+    func testAOneOffAlreadyPastCommitsToNothing() {
+        let start = at(1), finish = at(2)
+        XCTAssertNil(ArmorWindow.commitmentEnd(pattern: .dateRange(start: start, end: finish),
+                                               from: at(12)))
+    }
+
+    func testAPaydayGuardCommitsPastTheEndOfThePaydayItself() throws {
+        let today = Calendar.current.component(.day, from: Date())
+        let end = try XCTUnwrap(ArmorWindow.commitmentEnd(pattern: .monthly(days: [today]),
+                                                          from: at(12)))
+        XCTAssertGreaterThan(end, at(12))
+        XCTAssertLessThanOrEqual(end.timeIntervalSince(at(12)), 36 * 3600,
+                                 "armed on the day itself, it lifts at midnight, not next month")
+    }
+
+    func testTheCommitmentIsWhatTheCapMustMeasure() throws {
+        // The bug the new cap fixes: one occurrence of a payday guard is 24h and passed the old
+        // `longestRun` check, while the person arming it days early could not disarm until it ended.
+        let day = Calendar.current.component(.day, from: Date())
+        let paydayInFiveDays = ((day + 5 - 1) % 28) + 1
+        let end = ArmorWindow.commitmentEnd(pattern: .monthly(days: [paydayInFiveDays]), from: Date())
+        let span = try XCTUnwrap(end).timeIntervalSince(Date())
+        XCTAssertGreaterThan(span, GuardMode.lockedLimit,
+                             "so arm() must refuse it, though longestRun() reports only 24h")
+        XCTAssertEqual(ArmorPattern.monthly(days: [paydayInFiveDays]).longestRun(), 24 * 3600)
+    }
+}

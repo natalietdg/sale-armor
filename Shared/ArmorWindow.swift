@@ -99,6 +99,19 @@ struct ArmorWindow: Codable, Equatable {
     /// on upgrade.
     var mode: GuardMode = .standard
 
+    /// **When a locked guard stops refusing, decided once at arming and then never recomputed.**
+    ///
+    /// Locked used to mean "refuses while the shield is up", which left a scheduled guard fully
+    /// cancellable right up to the minute it fired — the 20:55 hole on a 21:00 guard, which is
+    /// exactly when somebody wants out. This pins the end of the first window the guard must sit
+    /// through, so the decision is made while calm and cannot be unmade as it approaches.
+    ///
+    /// Stored rather than derived because a stored answer cannot drift with the clock, the calendar
+    /// or a flight across timezones. `nil` on any window saved before this existed, which keeps the
+    /// old behaviour for guards already armed on someone's phone rather than tightening a promise
+    /// they never agreed to.
+    var lockedUntil: Date?
+
     /// The chosen apps, as opaque tokens. **This app never learns which apps they are** — the
     /// picker hands back tokens the system can resolve and we cannot.
     var selection: FamilyActivitySelection
@@ -120,7 +133,47 @@ struct ArmorWindow: Codable, Equatable {
     /// version — whether *this app* will do it for you.
     func canDisarm(at date: Date = Date(), calendar: Calendar = .current) -> Bool {
         guard mode == .locked else { return true }
-        return !covers(date, calendar: calendar)
+        // A window saved before `lockedUntil` existed keeps the behaviour it was armed under.
+        guard let lockedUntil else { return !covers(date, calendar: calendar) }
+        return date >= lockedUntil
+    }
+
+    /// **The end of the first window a guard armed at `date` must sit through.**
+    ///
+    /// This is what a locked guard is locked until, computed once at arming. Deliberately built on
+    /// `covers` by walking the clock rather than on fresh per-pattern arithmetic: the midnight wrap
+    /// is already solved and pinned by tests there, and a second implementation of it is a second
+    /// thing to get wrong. It runs once, on a tap, so the walk costs nothing anybody can feel.
+    ///
+    /// `nil` when the pattern will never cover anything again — a one-off that has already passed.
+    static func commitmentEnd(pattern: ArmorPattern, from date: Date,
+                              calendar: Calendar = .current) -> Date? {
+        // A one-off needs no search: it says when it ends.
+        if case let .dateRange(_, end) = pattern { return date < end ? end : nil }
+
+        // Whole-day patterns can be walked hourly — their only boundary is midnight. The rest are
+        // minute-resolution, because a window may be set to any minute.
+        let step: TimeInterval
+        let days: Double
+        switch pattern {
+        case .monthly, .doubleDates: step = 3600; days = 70   // longest gap to the next payday
+        case .weekly:                step = 60;   days = 9    // one full week plus a wrap
+        case .daily:                 step = 60;   days = 2
+        case .dateRange:             return nil               // handled above
+        }
+
+        let probe = ArmorWindow(name: "", pattern: pattern, selection: FamilyActivitySelection())
+        let horizon = date.addingTimeInterval(days * 24 * 3600)
+        var cursor = date
+
+        while cursor < horizon, !probe.covers(cursor, calendar: calendar) {
+            cursor.addTimeInterval(step)
+        }
+        guard cursor < horizon else { return nil }
+        while cursor < horizon, probe.covers(cursor, calendar: calendar) {
+            cursor.addTimeInterval(step)
+        }
+        return cursor < horizon ? cursor : nil
     }
 
     /// Whether the shield should be up at this instant. The extension handles the edges; this is
@@ -147,11 +200,12 @@ struct ArmorWindow: Codable, Equatable {
     }
 
     init(name: String, pattern: ArmorPattern, selection: FamilyActivitySelection,
-         mode: GuardMode = .standard) {
+         mode: GuardMode = .standard, lockedUntil: Date? = nil) {
         self.name = name
         self.pattern = pattern
         self.selection = selection
         self.mode = mode
+        self.lockedUntil = lockedUntil
     }
 
     init(from decoder: Decoder) throws {
@@ -160,6 +214,7 @@ struct ArmorWindow: Codable, Equatable {
         pattern = try box.decode(ArmorPattern.self, forKey: .pattern)
         selection = try box.decode(FamilyActivitySelection.self, forKey: .selection)
         mode = try box.decodeIfPresent(GuardMode.self, forKey: .mode) ?? .standard
+        lockedUntil = try box.decodeIfPresent(Date.self, forKey: .lockedUntil)
     }
 
     /// True when `date`'s time of day falls in the window, including windows that wrap midnight.
