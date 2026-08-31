@@ -82,7 +82,7 @@ targets:
         # The RevenueCat *public* SDK key. Designed to ship inside the app, so it is not a secret,
         # but it differs per project — keeping it here means changing it is not a code edit.
         RevenueCatAPIKey: $(REVENUECAT_API_KEY)
-        CFBundleShortVersionString: "1.0"
+        CFBundleShortVersionString: "1.0.1"
         # Build 2 predates the paywall, the cooling-off vault and the reminders.
         CFBundleVersion: "23"
         # Pixelify Sans, SIL Open Font Licence — free for commercial use. Chosen over Press Start
@@ -141,7 +141,7 @@ targets:
       path: SaleArmorMonitor/Info.plist
       properties:
         CFBundleDisplayName: Sale Armor Monitor
-        CFBundleShortVersionString: "1.0"
+        CFBundleShortVersionString: "1.0.1"
         # Must match the host app exactly or the upload is rejected.
         CFBundleVersion: "23"
         NSExtension:
@@ -191,7 +191,7 @@ targets:
         CFBundleDisplayName: Sale Armor Shield
         UIAppFonts:
           - PixelifySans.ttf
-        CFBundleShortVersionString: "1.0"
+        CFBundleShortVersionString: "1.0.1"
         # Must match the host app exactly or the upload is rejected.
         CFBundleVersion: "23"
         NSExtension:
