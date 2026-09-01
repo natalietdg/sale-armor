@@ -154,9 +154,28 @@ final class Subscription: ObservableObject {
                 return
             }
             let rank: [PackageType: Int] = [.weekly: 0, .monthly: 1, .annual: 2, .lifetime: 3]
-            plans = packages
+            var built = packages
                 .sorted { rank[$0.packageType, default: 9] < rank[$1.packageType, default: 9] }
                 .map(Self.plan(from:))
+
+            // **Having an offer is not the same as being allowed one.**
+            //
+            // `introductoryDiscount` describes the product; it says nothing about whether this
+            // Apple Account has already spent its one trial. A returning subscriber who sees
+            // "7 days free", taps it and gets charged has been lied to on the purchase screen, so
+            // the trial is stripped from every plan the store does not positively confirm. A
+            // `.unknown` answer counts as no: understating the offer costs a conversion, overstating
+            // it costs a refund and the review that comes with it.
+            let ids = built.compactMap { $0.trial == nil ? nil : $0.productID }
+            if !ids.isEmpty {
+                let eligibility = await Purchases.shared
+                    .checkTrialOrIntroDiscountEligibility(productIdentifiers: ids)
+                for i in built.indices where built[i].trial != nil {
+                    if eligibility[built[i].productID]?.status != .eligible { built[i].trial = nil }
+                }
+            }
+
+            plans = built
             problem = nil
             // The paid estimate needs a price, which only exists once the offering has loaded.
             await refresh()
@@ -170,6 +189,28 @@ final class Subscription: ObservableObject {
     /// The per-unit line is the honest version of a price comparison: the same money at a scale a
     /// person can picture, computed from the real price rather than written into the copy, so it
     /// cannot drift out of step with the store or be wrong in another currency.
+    /// The product's introductory offer, but **only when it is actually free**.
+    ///
+    /// `introductoryDiscount` also covers pay-as-you-go and pay-up-front offers, which are cheaper
+    /// first periods rather than free ones. Calling either of those "free" on a purchase screen is
+    /// a false statement about a charge, so anything but `.freeTrial` is dropped here rather than
+    /// somewhere further up where the distinction is easy to lose.
+    private static func trial(on product: StoreProduct) -> TrialOffer? {
+        guard let offer = product.introductoryDiscount, offer.paymentMode == .freeTrial else {
+            return nil
+        }
+        let unit: TrialOffer.Unit
+        switch offer.subscriptionPeriod.unit {
+        case .day:   unit = .day
+        case .week:  unit = .week
+        case .month: unit = .month
+        case .year:  unit = .year
+        @unknown default: return nil
+        }
+        return TrialOffer(value: offer.subscriptionPeriod.value, unit: unit,
+                          periods: offer.numberOfPeriods)
+    }
+
     private static func plan(from package: Package) -> Plan {
         let product = package.storeProduct
         let price = product.price as NSDecimalNumber
@@ -194,7 +235,7 @@ final class Subscription: ObservableObject {
             Plan(id: id, term: term, price: product.localizedPriceString, unit: unit,
                  badge: badge, renews: renews, package: package,
                  productID: product.productIdentifier, amount: price.doubleValue,
-                 periodDays: periodDays)
+                 periodDays: periodDays, trial: Self.trial(on: product))
         }
 
         switch package.packageType {

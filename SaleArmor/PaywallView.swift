@@ -26,6 +26,14 @@ struct Plan: Identifiable, Equatable {
     /// How long one period lasts. Nil for lifetime, which has no period.
     let periodDays: Double?
 
+    /// The free trial this plan offers **to this customer**, or nil.
+    ///
+    /// Nil covers three different things and deliberately does not distinguish them: no offer
+    /// exists, the customer has already used theirs, or the store would not say. Promising a trial
+    /// that does not materialise is a refund and a one-star review, so anything short of a definite
+    /// yes is treated as no.
+    var trial: TrialOffer? = nil
+
     static func == (a: Plan, b: Plan) -> Bool { a.id == b.id }
 }
 
@@ -125,6 +133,14 @@ struct PaywallView: View {
                     .foregroundStyle(on ? Px.bg : Px.ink)
                 Text(plan.unit).font(.px(10))
                     .foregroundStyle(on ? Px.bg.opacity(0.7) : Px.dim)
+                // Said on the row itself, not only in the small print, because this is the line
+                // that decides whether someone taps at all.
+                if let trial = plan.trial {
+                    Text(trial.phrase.uppercased())
+                        .font(.px(9, .black)).tracking(0.6)
+                        .foregroundStyle(on ? Px.bg : Px.goldMetal)
+                        .accessibilityIdentifier("planTrial-\(plan.id)")
+                }
             }
 
             Spacer(minLength: Px.unit)
@@ -149,7 +165,7 @@ struct PaywallView: View {
 
     private var buyBar: some View {
         VStack(spacing: Px.unit * 2) {
-            Button(subscription.isWorking ? "Working…" : "Arm yourself") {
+            Button(buyLabel) {
                 Task { if let chosen { await subscription.buy(chosen) } }
             }
             .buttonStyle(PxButtonStyle())
@@ -202,9 +218,21 @@ struct PaywallView: View {
     /// Apple requires the renewal mechanics in the binary, not only in the App Store metadata — and
     /// requires them to be *true*, which is why lifetime gets its own sentence rather than sitting
     /// under a blanket claim that everything renews.
+    /// "Start 7 days free" when nothing is charged today, and the old wording when something is.
+    /// A button that says "Arm yourself" over a free trial hides the best thing about the offer.
+    private var buyLabel: String {
+        if subscription.isWorking { return "Working…" }
+        if let trial = chosen?.trial { return "Start \(trial.length) free" }
+        return "Arm yourself"
+    }
+
+    /// **The disclosure Apple requires**, assembled in `TrialOffer` so this sentence and the row
+    /// above it cannot disagree about the length.
     private var renewalTerms: String {
-        guard chosen?.renews != false else { return "One payment. Nothing renews, nothing to cancel." }
-        return "Renews automatically until cancelled. Cancel any time in Settings."
+        TrialOffer.terms(trial: chosen?.trial,
+                         price: chosen?.price ?? "",
+                         term: chosen?.term ?? "",
+                         renews: chosen?.renews != false)
     }
 
     private func load() async {
