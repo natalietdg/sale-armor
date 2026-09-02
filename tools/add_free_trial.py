@@ -19,7 +19,20 @@ disclose it is a 3.1.2 rejection. Run it once the build carrying TrialOffer is t
     python3 tools/add_free_trial.py --commit
 """
 import sys
+import time
 from asc import call, paged, APP_ID
+
+
+def post(body, tries=4):
+    """ASC drops connections under this many writes. Retry rather than lose the run."""
+    for attempt in range(tries):
+        try:
+            return call("POST", "/v1/subscriptionIntroductoryOffers", body)
+        except Exception as exc:
+            if attempt == tries - 1:
+                return 0, {"errors": [{"detail": f"network {type(exc).__name__}"}]}
+            time.sleep(2 * (attempt + 1))
+    return 0, {}
 
 DURATION = "ONE_WEEK"
 MODE = "FREE_TRIAL"
@@ -53,7 +66,7 @@ def main():
 
         ok = fail = 0
         for territory in todo:
-            status, data = call("POST", "/v1/subscriptionIntroductoryOffers", {
+            status, data = post({
                 "data": {
                     "type": "subscriptionIntroductoryOffers",
                     "attributes": {"duration": DURATION, "offerMode": MODE,

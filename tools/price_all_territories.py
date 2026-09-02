@@ -16,7 +16,7 @@ import asc
 
 # The base price in each product's own currency terms, as decided: weekly is the plan meant to
 # sell, and the ladder above it does the anchoring.
-BASE = {"weekly": 3.99, "monthly": 9.99, "annual": 99.99}
+BASE = {"weekly": 2.99, "monthly": 8.99, "annual": 89.99}
 
 
 def usa_price_point(subscription_id, target):
