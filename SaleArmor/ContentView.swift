@@ -2,9 +2,18 @@ import SwiftUI
 import FamilyControls
 
 /// Two things: the guard, and the wishlist. No dashboard, no goals, no streaks.
+/// **The two links Apple requires to be reachable, and the app still shows them.**
+///
+/// They lived next to the paywall until the app became free. The paywall is gone; the obligation
+/// is not, and a privacy policy is worth showing on its own merits for an app that reads Screen
+/// Time. Both are 44pt tap targets, which is what the 2.1(a) rejection was actually about.
+enum Policy {
+    static let terms = URL(string: "https://salearmor.pages.dev/terms")!
+    static let privacy = URL(string: "https://salearmor.pages.dev/privacy")!
+}
+
 struct ContentView: View {
     @StateObject private var controller = ArmorController()
-    @StateObject private var subscription = Subscription()
     @StateObject private var music = Music()
     /// Owned by the app delegate, not by this view — a payday offer can be tapped before any view
     /// exists. See `PaydayOfferInbox`.
@@ -22,28 +31,22 @@ struct ContentView: View {
         ZStack {
             PxBricks()
             VStack(spacing: 0) {
-                // The paywall sits above everything, including the Screen Time prompt: there is no
-                // free tier, so an unsubscribed person never reaches the app picker at all.
-                if subscription.isActive {
-                    if controller.authorization == .approved {
-                        HStack(spacing: 0) {
-                            tabBar
-                            musicButton
-                        }
-                        Divider().overlay(Px.line)
+                // **The app is free.** The paywall used to sit above all of this, above even the
+                // Screen Time prompt, so nobody reached the app picker without paying. There is no
+                // gate now and no branch to take: the guard screen is what opens.
+                if controller.authorization == .approved {
+                    HStack(spacing: 0) {
+                        tabBar
+                        musicButton
                     }
-                    content
-                        .padding(Px.unit * 5)
-                        .frame(maxWidth: 520)
-                        .frame(maxWidth: .infinity)
-                    Spacer(minLength: 0)
-                    policyFooter
-                } else {
-                    PaywallView(subscription: subscription)
-                        .padding(.horizontal, Px.unit * 5)
-                        .frame(maxWidth: 520)
-                        .frame(maxWidth: .infinity)
+                    Divider().overlay(Px.line)
                 }
+                content
+                    .padding(Px.unit * 5)
+                    .frame(maxWidth: 520)
+                    .frame(maxWidth: .infinity)
+                Spacer(minLength: 0)
+                policyFooter
             }
         }
         .preferredColorScheme(.dark)
@@ -59,7 +62,6 @@ struct ContentView: View {
             guard phase == .active else { return }
             controller.syncWithClock()
             // A subscription can lapse or be restored while the app is closed.
-            Task { await subscription.refresh() }
         }
     }
 
@@ -87,8 +89,8 @@ struct ContentView: View {
         .padding(.top, Px.unit * 2)
     }
 
-    /// A subscriber never sees the paywall again, so its Terms and Privacy links would be the only
-    /// ones in the app and would be unreachable the moment they are needed.
+    /// The only Terms and Privacy links in the app, and the reason they sit on every screen: the
+    /// paywall that used to carry them no longer exists.
     private var policyFooter: some View {
         HStack(spacing: Px.unit * 4) {
             Link(destination: Policy.terms) { Text("Terms").pxTapTarget() }
@@ -129,7 +131,6 @@ struct ContentView: View {
                     ArmedView(window: window,
                               shielding: controller.isShielding,
                               saved: controller.wishlist.saved,
-                              paid: subscription.paidSoFar,
                               problem: controller.problem,
                               onDisarm: { controller.disarm() })
                 } else {
@@ -644,7 +645,6 @@ private struct ArmedView: View {
     /// it up.
     let saved: Double
     /// Roughly what Sale Armor has cost so far. Nil while unknown, and the return stays hidden.
-    let paid: Double?
     /// Shown because this screen can now be arrived at by tapping a payday offer, and an offer that
     /// could not be honoured — a locked guard is already running — must say so rather than do
     /// nothing.
@@ -710,13 +710,6 @@ private struct ArmedView: View {
                         Text(Self.money(saved))
                             .font(.px(26, .black)).foregroundStyle(Px.goldMetal)
                             .accessibilityIdentifier("armedSaved")
-                        // Only once it has actually paid for itself. Showing "0.4x" to someone who
-                        // has not turned anything down yet would be an argument against the app.
-                        if let paid, paid > 0, saved > paid {
-                            Text("\(Self.money(paid)) spent on Sale Armor · \(Self.multiple(saved / paid)) back")
-                                .font(.px(10)).foregroundStyle(Px.dim)
-                                .accessibilityIdentifier("armedReturn")
-                        }
                     }
                 }
 

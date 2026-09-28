@@ -22,8 +22,6 @@
 	<string>24</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>RevenueCatAPIKey</key>
-	<string>$(REVENUECAT_API_KEY)</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>PixelifySans.ttf</string>

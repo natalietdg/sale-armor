@@ -17,29 +17,10 @@ enum Demo {
     static let isSeeded = isOn && arguments.contains("-seed")
     /// Opens on the second tab, so the wishlist can be shot without faking a tap.
     static let opensWishlist = isOn && arguments.contains("-wishlist")
-    /// Shows the paywall with sample plans. A simulator cannot reach App Store products, so this
-    /// is the only way to see the layout — and it is how the App Review screenshot is taken, since
-    /// Apple needs to see where the subscription is presented, not a failed network call.
-    static let showsPaywall = isOn && arguments.contains("-paywall")
-
-    /// **Opens the gate without faking anything else.**
-    ///
-    /// `-demo` is for screenshots, so it stubs out the whole Screen Time layer: authorization is
-    /// reported as approved without asking, the schedule is never started, and the shield is never
-    /// raised. That makes it useless for the one thing you cannot check any other way — what a
-    /// blocked app actually looks like.
-    ///
-    /// This flag skips only the paywall. Everything below it runs for real, so the Screen Time
-    /// prompt appears, the picker returns real tokens and the shield genuinely goes up. Needed
-    /// because the app is entirely gated and the store has no products until the Paid Apps
-    /// Agreement is active.
-    static let isUnlocked = arguments.contains("-unlocked")
 #else
     static let isOn = false
     static let isSeeded = false
     static let opensWishlist = false
-    static let showsPaywall = false
-    static let isUnlocked = false
 #endif
 }
 

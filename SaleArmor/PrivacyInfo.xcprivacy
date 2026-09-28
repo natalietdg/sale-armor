@@ -2,15 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Required because the app and both extensions read and write UserDefaults. Apple rejects
-	     an upload that uses a required-reason API without declaring it (ITMS-91053).
-
-	     BOTH codes, because this app does both things. CA92.1 covers defaults belonging to the
-	     app alone — the music toggle and the cached subscription flag. 1C8F.1 covers the App
-	     Group suite that the app and its two extensions share.
-
-	     CA92.1 alone was wrong. Apple's definition excludes App Group data outright; it does not
-	     matter that the only other members of the group are our own extensions. -->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>
@@ -23,36 +14,11 @@
 			</array>
 		</dict>
 	</array>
-	<!-- No tracking and no tracking domains: nothing here follows anyone across apps or
-	     websites, and there are no ads. RevenueCat is the only network the app talks to, and
-	     it is declared below rather than here, because subscription status is not tracking. -->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
 	<key>NSPrivacyTracking</key>
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
-	<!-- Purchase history reaches RevenueCat as an Apple receipt against an anonymous on-device
-	     identifier. Nothing is linked to a person and nothing is used to track. RevenueCat ships
-	     its own manifest for its side of that.
-
-	     Both purposes are declared because RevenueCat's App Privacy guidance names both as the
-	     bare minimum: App Functionality covers receipt validation and unlocking entitlements,
-	     Analytics covers its dashboard — Customer History, Charts and Experiments. Declaring only
-	     the first under-states what the SDK does the moment any of those are used. -->
-	<key>NSPrivacyCollectedDataTypes</key>
-	<array>
-		<dict>
-			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypePurchaseHistory</string>
-			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypePurposes</key>
-			<array>
-				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-				<string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
-			</array>
-		</dict>
-	</array>
 </dict>
 </plist>

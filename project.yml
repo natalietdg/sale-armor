@@ -12,9 +12,6 @@ settings:
     SWIFT_VERSION: "5.10"
     # Read from the Apple Development certificate's OU field, not typed from memory.
     DEVELOPMENT_TEAM: "DC4T539CW7"
-    # Filled in from RevenueCat → Project → API keys. Empty means the paywall reports that the
-    # store is not configured rather than crashing.
-    REVENUECAT_API_KEY: "appl_aywpPpYiohUOCbGxLTonQSkcwef"
 
 # SIGNING — why each target repeats this instead of inheriting it
 #
@@ -37,11 +34,6 @@ settings:
 # minimum entitlements, silently dropping family-controls and the App Group, so the shield never
 # raises. Naming the Store profile removes the guesswork. Debug stays automatic so running on a
 # device still just works.
-
-packages:
-  RevenueCat:
-    url: https://github.com/RevenueCat/purchases-ios
-    from: "5.0.0"
 
 targets:
   SaleArmor:
@@ -79,11 +71,7 @@ targets:
       path: SaleArmor/Info.plist
       properties:
         CFBundleDisplayName: Sale Armor
-        # The RevenueCat *public* SDK key. Designed to ship inside the app, so it is not a secret,
-        # but it differs per project — keeping it here means changing it is not a code edit.
-        RevenueCatAPIKey: $(REVENUECAT_API_KEY)
         CFBundleShortVersionString: "1.0.1"
-        # Build 2 predates the paywall, the cooling-off vault and the reminders.
         CFBundleVersion: "24"
         # Pixelify Sans, SIL Open Font Licence — free for commercial use. Chosen over Press Start
         # 2P because the app has real sentences in it and Press Start is unreadable below ~14pt.
@@ -105,9 +93,6 @@ targets:
         embed: true
       - target: SaleArmorShield
         embed: true
-      # The extension never sells anything, so only the app links this.
-      - package: RevenueCat
-        product: RevenueCat
 
   # The extension is what actually raises and drops the shield. The app only schedules it, so a
   # window still opens and closes correctly when the app is never launched that day.
@@ -254,8 +239,6 @@ schemes:
         SaleArmorTests: [test]
     run:
       config: Debug
-      # Local products, so the paywall can be exercised without App Store Connect.
-      storeKitConfiguration: SaleArmor.storekit
     test:
       config: Debug
       targets:
@@ -265,33 +248,8 @@ schemes:
     archive:
       config: Release
 
-  # A second scheme rather than arguments typed into the shared one.
-  #
-  # `-demo` skips the paywall, which is the only way to reach the app picker while the Paid Apps
-  # Agreement is still pending — with no agreement there are no products, and the gate in
-  # ContentView renders the paywall and nothing else. Kept separate so a normal Run still exercises
-  # the real purchase path; the flags are compiled out of Release regardless (see `enum Demo`).
-  # The whole app, real Screen Time, no paywall. This is the only way to see a blocked app
-  # while the store has no products to sell.
-  # The real App Store, from Xcode. The plain SaleArmor scheme points at SaleArmor.storekit, which
-  # serves local products and therefore cannot reproduce a store problem — this one has no
-  # configuration attached, so it hits Apple exactly as a TestFlight build does.
-  SaleArmor (Live Store):
-    build:
-      targets:
-        SaleArmor: [run]
-    run:
-      config: Debug
-
-  SaleArmor (Unlocked):
-    build:
-      targets:
-        SaleArmor: [run]
-    run:
-      config: Debug
-      commandLineArguments:
-        "-unlocked": true
-
+  # `-demo` stubs the Screen Time layer so screenshots can be taken without a real grant. Kept as
+  # its own scheme rather than arguments typed into the shared one, and compiled out of Release.
   SaleArmor (Demo):
     build:
       targets:
@@ -300,8 +258,6 @@ schemes:
       config: Debug
       commandLineArguments:
         "-demo": true
-      # No StoreKit configuration on purpose: -demo bypasses the store entirely, and pointing at
-      # both would make it ambiguous which one let you in.
 
   # Kept out of the SaleArmor scheme on purpose: the unit suite is the fast gate that runs on every
   # change, and a UI test needs a booted simulator. Run this one before any App Store submission.
