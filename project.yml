@@ -71,8 +71,8 @@ targets:
       path: SaleArmor/Info.plist
       properties:
         CFBundleDisplayName: Sale Armor
-        CFBundleShortVersionString: "1.0.1"
-        CFBundleVersion: "24"
+        CFBundleShortVersionString: "1.1"
+        CFBundleVersion: "25"
         # Pixelify Sans, SIL Open Font Licence — free for commercial use. Chosen over Press Start
         # 2P because the app has real sentences in it and Press Start is unreadable below ~14pt.
         UIAppFonts:
@@ -126,9 +126,9 @@ targets:
       path: SaleArmorMonitor/Info.plist
       properties:
         CFBundleDisplayName: Sale Armor Monitor
-        CFBundleShortVersionString: "1.0.1"
+        CFBundleShortVersionString: "1.1"
         # Must match the host app exactly or the upload is rejected.
-        CFBundleVersion: "24"
+        CFBundleVersion: "25"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldMonitor
@@ -176,9 +176,9 @@ targets:
         CFBundleDisplayName: Sale Armor Shield
         UIAppFonts:
           - PixelifySans.ttf
-        CFBundleShortVersionString: "1.0.1"
+        CFBundleShortVersionString: "1.1"
         # Must match the host app exactly or the upload is rejected.
-        CFBundleVersion: "24"
+        CFBundleVersion: "25"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldConfig
